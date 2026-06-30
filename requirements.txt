@@ -1,0 +1,10 @@
+pybit
+pandas
+numpy
+python-dotenv
+websocket-client
+requests
+ccxt
+ta
+scikit-learn
+schedule

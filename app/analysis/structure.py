@@ -1,51 +1,40 @@
 import pandas as pd
 
+from app.analysis.swing import SwingAnalyzer
+
 
 class StructureAnalyzer:
 
     @staticmethod
-    def analyze(df: pd.DataFrame):
-
-        if len(df) < 20:
+    def analyze(df: pd.DataFrame) -> str:
+        if len(df) < 30:
             return "RANGE"
 
-        highs = df["high"].tail(10).tolist()
-        lows = df["low"].tail(10).tolist()
+        highs, lows = SwingAnalyzer.analyze(df, window=3)
 
-        higher_highs = 0
-        lower_highs = 0
+        if len(highs) >= 2 and len(lows) >= 2:
+            hh = highs[-1]["price"] > highs[-2]["price"]
+            hl = lows[-1]["price"] > lows[-2]["price"]
+            lh = highs[-1]["price"] < highs[-2]["price"]
+            ll = lows[-1]["price"] < lows[-2]["price"]
 
-        higher_lows = 0
-        lower_lows = 0
+            if hh and hl:
+                return "UPTREND"
+            if lh and ll:
+                return "DOWNTREND"
 
-        for i in range(1, len(highs)):
+        # Fallback: recent candle progression
+        highs_tail = df["high"].tail(10).tolist()
+        lows_tail = df["low"].tail(10).tolist()
 
-            if highs[i] > highs[i - 1]:
-                higher_highs += 1
-            else:
-                lower_highs += 1
-
-            if lows[i] > lows[i - 1]:
-                higher_lows += 1
-            else:
-                lower_lows += 1
+        higher_highs = sum(1 for i in range(1, len(highs_tail)) if highs_tail[i] > highs_tail[i - 1])
+        higher_lows = sum(1 for i in range(1, len(lows_tail)) if lows_tail[i] > lows_tail[i - 1])
+        lower_highs = sum(1 for i in range(1, len(highs_tail)) if highs_tail[i] < highs_tail[i - 1])
+        lower_lows = sum(1 for i in range(1, len(lows_tail)) if lows_tail[i] < lows_tail[i - 1])
 
         if higher_highs >= 6 and higher_lows >= 6:
             return "UPTREND"
-
         if lower_highs >= 6 and lower_lows >= 6:
             return "DOWNTREND"
 
         return "RANGE"
-
-
-if __name__ == "__main__":
-
-    from app.collectors.candles import CandleCollector
-
-    collector = CandleCollector()
-
-    df = collector.get_candles()
-
-    print("\n========== STRUCTURE ==========\n")
-    print(StructureAnalyzer.analyze(df))

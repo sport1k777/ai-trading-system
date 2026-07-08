@@ -1,8 +1,16 @@
+import logging
+
+import pandas as pd
 from pybit.unified_trading import HTTP
+
 from app.config import BYBIT_API_KEY, BYBIT_API_SECRET, TESTNET
+
+logger = logging.getLogger(__name__)
 
 
 class BybitClient:
+    """Single shared Bybit HTTP session for all exchange interactions."""
+
     def __init__(self):
         self.session = HTTP(
             testnet=TESTNET,
@@ -13,11 +21,66 @@ class BybitClient:
     def get_server_time(self):
         return self.session.get_server_time()
 
-    def get_tickers(self):
-        return self.session.get_tickers(category="linear")
+    def get_tickers(self, category: str = "linear"):
+        return self.session.get_tickers(category=category)
+
+    def get_klines(
+        self,
+        symbol: str = "BTCUSDT",
+        interval: str = "15",
+        limit: int = 250,
+    ) -> pd.DataFrame:
+        response = self.session.get_kline(
+            category="linear",
+            symbol=symbol,
+            interval=interval,
+            limit=limit,
+        )
+
+        if response.get("retCode", 0) != 0:
+            msg = response.get("retMsg", "Unknown Bybit API error")
+            raise RuntimeError(f"Bybit kline request failed: {msg}")
+
+        data = response["result"]["list"]
+        if not data:
+            raise ValueError(f"No candle data returned for {symbol}")
+
+        df = pd.DataFrame(
+            data,
+            columns=[
+                "timestamp",
+                "open",
+                "high",
+                "low",
+                "close",
+                "volume",
+                "turnover",
+            ],
+        )
+
+        df = df.astype(
+            {
+                "open": float,
+                "high": float,
+                "low": float,
+                "close": float,
+                "volume": float,
+                "turnover": float,
+            }
+        )
+
+        df["timestamp"] = pd.to_datetime(
+            df["timestamp"].astype("int64"),
+            unit="ms",
+        )
+
+        return df.sort_values("timestamp").reset_index(drop=True)
 
 
 if __name__ == "__main__":
+    from app.utils.logging_config import setup_logging
+
+    setup_logging(__name__)
     client = BybitClient()
 
     print("Server Time:")
@@ -25,7 +88,6 @@ if __name__ == "__main__":
 
     print("\nBTC Ticker:")
     tickers = client.get_tickers()
-
     for coin in tickers["result"]["list"]:
         if coin["symbol"] == "BTCUSDT":
             print(coin)

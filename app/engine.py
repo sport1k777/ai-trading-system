@@ -1,82 +1,54 @@
-from app.collectors.candles import CandleCollector
-from app.indicators.signals import SignalIndicators
-from app.indicators.trend import TrendAnalyzer
-
-from app.analysis.structure import StructureAnalyzer
-from app.analysis.swing import SwingAnalyzer
-from app.analysis.bos import BOSAnalyzer
-from app.analysis.signal_generator import SignalGenerator
-from app.analysis.liquidity import LiquidityAnalyzer
-from app.analysis.order_block import OrderBlockAnalyzer
-from app.analysis.fvg import FVGAnalyzer
-
-from app.risk.risk_manager import RiskManager
+from app.pipeline import TradingPipeline
+from app.utils.logging_config import setup_logging
 
 
 def main():
+    setup_logging("app.engine")
+    pipeline = TradingPipeline()
 
     print("\n==============================")
     print("      AI TRADING SYSTEM")
     print("==============================")
 
-    # Завантаження свічок
-    collector = CandleCollector()
-    df = collector.get_candles()
+    try:
+        result = pipeline.analyze()
+    except Exception as exc:
+        print(f"\nError: {exc}")
+        return
 
-    # Індикатори
-    df = SignalIndicators.calculate(df)
-
-    # Аналіз
-    trend = TrendAnalyzer.detect_trend(df)
-    structure = StructureAnalyzer.analyze(df)
-    bos = BOSAnalyzer.analyze(df)
-
-    liquidity = LiquidityAnalyzer.analyze(df)
-    order_block = OrderBlockAnalyzer.analyze(df)
-    fvg = FVGAnalyzer.analyze(df)
-
-    highs, lows = SwingAnalyzer.analyze(df)
-
-    signal = SignalGenerator.generate(df)
-
-    price = df.iloc[-1]["close"]
-    atr = df.iloc[-1]["atr"]
-
-    risk = RiskManager.calculate(
-        price,
-        atr,
-        signal["signal"]
-    )
+    signal = result.signal
 
     print("\n========== RESULT ==========\n")
-
-    print(f"Trend       : {trend}")
-    print(f"Structure   : {structure}")
-    print(f"BOS         : {bos}")
-    print(f"Liquidity   : {liquidity}")
-    print(f"Order Block : {order_block}")
-    print(f"FVG         : {fvg}")
-
+    print(f"Trend       : {result.trend}")
+    print(f"Structure   : {result.structure}")
+    print(f"BOS         : {result.bos}")
+    print(f"CHOCH       : {result.choch}")
+    print(f"Liquidity   : {result.liquidity}")
+    print(f"Order Block : {result.order_block}")
+    print(f"FVG         : {result.fvg}")
     print()
-
     print(f"Signal      : {signal['signal']}")
+    print(f"Setup       : {signal.get('setup_type', 'n/a')}")
     print(f"Score       : {signal['score']}")
-
     print("\nReasons:")
-
     for reason in signal["reasons"]:
         print(f"- {reason}")
 
-    print("\nLast Swing High:")
-    print(highs[-1])
+    if result.swing_highs:
+        print("\nLast Swing High:")
+        print(result.swing_highs[-1])
+    else:
+        print("\nLast Swing High: none detected")
 
-    print("\nLast Swing Low:")
-    print(lows[-1])
+    if result.swing_lows:
+        print("\nLast Swing Low:")
+        print(result.swing_lows[-1])
+    else:
+        print("\nLast Swing Low: none detected")
 
-    if risk:
-
+    if result.risk:
+        risk = result.risk
         print("\n========== RISK ==========\n")
-
         print(f"Entry : {risk['entry']}")
         print(f"Stop  : {risk['stop']}")
         print(f"TP1   : {risk['tp1']}")

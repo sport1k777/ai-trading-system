@@ -1,58 +1,34 @@
-from app.collectors.candles import CandleCollector
-from app.indicators.signals import SignalIndicators
-from app.analysis.signal_generator import SignalGenerator
-from app.risk.risk_manager import RiskManager
+import logging
 
-SYMBOLS = [
-    "BTCUSDT",
-    "ETHUSDT",
-    "SOLUSDT",
-    "XRPUSDT",
-    "DOGEUSDT",
-]
+from app.config import SCANNER_SYMBOLS
+from app.pipeline import TradingPipeline
+from app.utils.logging_config import setup_logging
+
+logger = logging.getLogger(__name__)
 
 
 class Scanner:
 
     @staticmethod
     def run():
-
-        collector = CandleCollector()
+        setup_logging("app.scanner")
+        pipeline = TradingPipeline()
 
         print("\n========== MARKET SCANNER ==========\n")
 
-        for symbol in SYMBOLS:
-
+        for symbol in SCANNER_SYMBOLS:
             try:
-
-                # Отримуємо свічки
-                df = collector.get_candles(symbol=symbol)
-
-                # Додаємо всі індикатори (EMA, RSI, MACD, ATR)
-                df = SignalIndicators.calculate(df)
-
-                # Генеруємо сигнал
-                result = SignalGenerator.generate(df)
-
-                # Поточна ціна та ATR
-                price = df.iloc[-1]["close"]
-                atr = df.iloc[-1]["atr"]
-
-                # Розрахунок ризику
-                risk = RiskManager.calculate(
-                    price,
-                    atr,
-                    result["signal"]
-                )
+                result = pipeline.analyze(symbol=symbol)
+                signal = result.signal
 
                 print(f"\n{symbol}")
                 print("-" * 40)
-                print(f"Signal : {result['signal']}")
-                print(f"Score  : {result['score']}")
-                print(f"Trend  : {result['trend']}")
+                print(f"Signal : {signal['signal']}")
+                print(f"Score  : {signal['score']}")
+                print(f"Trend  : {signal['trend']}")
 
-                if risk:
-
+                if result.risk:
+                    risk = result.risk
                     print(f"Entry  : {risk['entry']}")
                     print(f"Stop   : {risk['stop']}")
                     print(f"TP1    : {risk['tp1']}")
@@ -60,9 +36,9 @@ class Scanner:
                     print(f"TP3    : {risk['tp3']}")
                     print(f"RR     : 1:{risk['rr']}")
 
-            except Exception as e:
-
-                print(f"{symbol} -> ERROR: {e}")
+            except Exception as exc:
+                logger.exception("Scanner failed for %s", symbol)
+                print(f"{symbol} -> ERROR: {exc}")
 
         print("\n=====================================\n")
 

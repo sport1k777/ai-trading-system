@@ -1,69 +1,31 @@
-from pybit.unified_trading import HTTP
-from app.config import BYBIT_API_KEY, BYBIT_API_SECRET
+import logging
 
-import pandas as pd
+from app.config import DEFAULT_CANDLE_LIMIT, DEFAULT_INTERVAL, DEFAULT_SYMBOL
+from app.utils.bybit_client import BybitClient
+
+logger = logging.getLogger(__name__)
 
 
 class CandleCollector:
-    def __init__(self):
-        self.session = HTTP(
-            testnet=False,
-            api_key=BYBIT_API_KEY,
-            api_secret=BYBIT_API_SECRET,
-        )
+    """Fetches OHLCV candles via the shared Bybit client."""
+
+    def __init__(self, client=None):
+        self.client = client or BybitClient()
 
     def get_candles(
         self,
-        symbol="BTCUSDT",
-        interval="15",
-        limit=200,
+        symbol: str = DEFAULT_SYMBOL,
+        interval: str = DEFAULT_INTERVAL,
+        limit: int = DEFAULT_CANDLE_LIMIT,
     ):
-        response = self.session.get_kline(
-            category="linear",
-            symbol=symbol,
-            interval=interval,
-            limit=limit,
-        )
-
-        data = response["result"]["list"]
-
-        df = pd.DataFrame(
-            data,
-            columns=[
-                "timestamp",
-                "open",
-                "high",
-                "low",
-                "close",
-                "volume",
-                "turnover",
-            ],
-        )
-
-        df = df.astype(
-            {
-                "open": float,
-                "high": float,
-                "low": float,
-                "close": float,
-                "volume": float,
-                "turnover": float,
-            }
-        )
-
-        df["timestamp"] = pd.to_datetime(
-            df["timestamp"].astype("int64"),
-            unit="ms",
-        )
-
-        df = df.sort_values("timestamp").reset_index(drop=True)
-
-        return df
+        logger.debug("Fetching %s candles for %s (interval=%s)", limit, symbol, interval)
+        return self.client.get_klines(symbol=symbol, interval=interval, limit=limit)
 
 
 if __name__ == "__main__":
+    from app.utils.logging_config import setup_logging
+
+    setup_logging(__name__)
     collector = CandleCollector()
-
     df = collector.get_candles()
-
     print(df.tail())

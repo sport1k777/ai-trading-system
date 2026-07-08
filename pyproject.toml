@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ai-trading-system"
+version = "1.0.0"
+description = "Bybit futures signal analysis and backtesting toolkit"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+    "pybit>=5.8",
+    "pandas>=2.0",
+    "numpy>=1.24",
+    "python-dotenv>=1.0",
+    "ta>=0.11",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+]
+
+[project.scripts]
+trading-engine = "app.engine:main"
+trading-scanner = "app.scanner:main"
+trading-backtest = "app.backtester:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["app*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

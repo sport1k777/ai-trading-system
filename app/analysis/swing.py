@@ -4,15 +4,19 @@ import pandas as pd
 class SwingAnalyzer:
 
     @staticmethod
-    def analyze(df: pd.DataFrame, window: int = 3):
-
+    def analyze(df: pd.DataFrame, window: int = 3, lookback: int = None):
         highs = []
         lows = []
 
         if len(df) < window * 2 + 1:
             return highs, lows
 
-        for i in range(window, len(df) - window):
+        start = window
+        end = len(df) - window
+        if lookback is not None:
+            start = max(window, len(df) - lookback)
+
+        for i in range(start, end):
 
             current_high = df.iloc[i]["high"]
             current_low = df.iloc[i]["low"]

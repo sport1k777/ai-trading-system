@@ -1,10 +1,6 @@
-pybit
-pandas
-numpy
-python-dotenv
-websocket-client
-requests
-ccxt
-ta
-scikit-learn
-schedule
+pybit>=5.8
+pandas>=2.0
+numpy>=1.24
+python-dotenv>=1.0
+ta>=0.11
+pytest>=8.0

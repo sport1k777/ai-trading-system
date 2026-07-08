@@ -6,37 +6,46 @@ class StructureAnalyzer:
     @staticmethod
     def analyze(df: pd.DataFrame):
 
-        highs = df["high"].tolist()
-        lows = df["low"].tolist()
+        if len(df) < 20:
+            return "RANGE"
 
-        last_high = highs[-1]
-        prev_high = highs[-2]
+        highs = df["high"].tail(10).tolist()
+        lows = df["low"].tail(10).tolist()
 
-        last_low = lows[-1]
-        prev_low = lows[-2]
+        higher_highs = 0
+        lower_highs = 0
 
-        if last_high > prev_high and last_low > prev_low:
+        higher_lows = 0
+        lower_lows = 0
+
+        for i in range(1, len(highs)):
+
+            if highs[i] > highs[i - 1]:
+                higher_highs += 1
+            else:
+                lower_highs += 1
+
+            if lows[i] > lows[i - 1]:
+                higher_lows += 1
+            else:
+                lower_lows += 1
+
+        if higher_highs >= 6 and higher_lows >= 6:
             return "UPTREND"
 
-        elif last_high < prev_high and last_low < prev_low:
+        if lower_highs >= 6 and lower_lows >= 6:
             return "DOWNTREND"
 
-        else:
-            return "RANGE"
+        return "RANGE"
 
 
 if __name__ == "__main__":
 
-     from app.collectors.candles import CandleCollector
+    from app.collectors.candles import CandleCollector
 
-     collector = CandleCollector()
+    collector = CandleCollector()
 
-     df = collector.get_candles()
+    df = collector.get_candles()
 
-     structure = StructureAnalyzer.analyze(df)
-
-     print()
-     print("======================")
-     print("Market Structure")
-     print("======================")
-     print(structure)
+    print("\n========== STRUCTURE ==========\n")
+    print(StructureAnalyzer.analyze(df))

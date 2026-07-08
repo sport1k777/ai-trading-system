@@ -3,7 +3,7 @@ class RiskManager:
     @staticmethod
     def calculate(price, atr, signal):
 
-        if signal == "LONG":
+        if signal == "BUY":
 
             entry = price
             stop = price - atr
@@ -12,7 +12,7 @@ class RiskManager:
             tp2 = price + atr * 2
             tp3 = price + atr * 3
 
-        elif signal == "SHORT":
+        elif signal == "SELL":
 
             entry = price
             stop = price + atr
@@ -35,3 +35,14 @@ class RiskManager:
             "tp3": round(tp3, 2),
             "rr": rr
         }
+
+
+if __name__ == "__main__":
+
+    risk = RiskManager.calculate(
+        58000,
+        250,
+        "BUY"
+    )
+
+    print(risk)

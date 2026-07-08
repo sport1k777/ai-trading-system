@@ -6,6 +6,9 @@ from app.analysis.structure import StructureAnalyzer
 from app.analysis.swing import SwingAnalyzer
 from app.analysis.bos import BOSAnalyzer
 from app.analysis.signal_generator import SignalGenerator
+from app.analysis.liquidity import LiquidityAnalyzer
+from app.analysis.order_block import OrderBlockAnalyzer
+from app.analysis.fvg import FVGAnalyzer
 
 from app.risk.risk_manager import RiskManager
 
@@ -16,29 +19,26 @@ def main():
     print("      AI TRADING SYSTEM")
     print("==============================")
 
-    # Завантажуємо свічки
+    # Завантаження свічок
     collector = CandleCollector()
     df = collector.get_candles()
 
-    # Рахуємо індикатори
+    # Індикатори
     df = SignalIndicators.calculate(df)
 
-    # Тренд
+    # Аналіз
     trend = TrendAnalyzer.detect_trend(df)
-
-    # Структура
     structure = StructureAnalyzer.analyze(df)
-
-    # BOS
     bos = BOSAnalyzer.analyze(df)
 
-    # Swing High / Low
+    liquidity = LiquidityAnalyzer.analyze(df)
+    order_block = OrderBlockAnalyzer.analyze(df)
+    fvg = FVGAnalyzer.analyze(df)
+
     highs, lows = SwingAnalyzer.analyze(df)
 
-    # Генеруємо сигнал
     signal = SignalGenerator.generate(df)
 
-    # Risk Manager
     price = df.iloc[-1]["close"]
     atr = df.iloc[-1]["atr"]
 
@@ -48,14 +48,19 @@ def main():
         signal["signal"]
     )
 
-    print("\n========== RESULT ==========")
+    print("\n========== RESULT ==========\n")
 
-    print(f"Trend      : {trend}")
-    print(f"Structure  : {structure}")
-    print(f"BOS        : {bos}")
+    print(f"Trend       : {trend}")
+    print(f"Structure   : {structure}")
+    print(f"BOS         : {bos}")
+    print(f"Liquidity   : {liquidity}")
+    print(f"Order Block : {order_block}")
+    print(f"FVG         : {fvg}")
 
-    print(f"Signal     : {signal['signal']}")
-    print(f"Score      : {signal['score']}")
+    print()
+
+    print(f"Signal      : {signal['signal']}")
+    print(f"Score       : {signal['score']}")
 
     print("\nReasons:")
 
@@ -70,7 +75,7 @@ def main():
 
     if risk:
 
-        print("\n========== RISK ==========")
+        print("\n========== RISK ==========\n")
 
         print(f"Entry : {risk['entry']}")
         print(f"Stop  : {risk['stop']}")

@@ -4,60 +4,66 @@ import pandas as pd
 class SwingAnalyzer:
 
     @staticmethod
-    def analyze(df: pd.DataFrame):
+    def analyze(df: pd.DataFrame, window: int = 3):
 
         highs = []
         lows = []
 
-        for i in range(2, len(df) - 2):
+        if len(df) < window * 2 + 1:
+            return highs, lows
+
+        for i in range(window, len(df) - window):
+
+            current_high = df.iloc[i]["high"]
+            current_low = df.iloc[i]["low"]
+
+            left_highs = df.iloc[i - window:i]["high"]
+            right_highs = df.iloc[i + 1:i + window + 1]["high"]
+
+            left_lows = df.iloc[i - window:i]["low"]
+            right_lows = df.iloc[i + 1:i + window + 1]["low"]
 
             # Swing High
             if (
-                df["high"].iloc[i] > df["high"].iloc[i - 1]
-                and df["high"].iloc[i] > df["high"].iloc[i - 2]
-                and df["high"].iloc[i] > df["high"].iloc[i + 1]
-                and df["high"].iloc[i] > df["high"].iloc[i + 2]
+                current_high > left_highs.max()
+                and current_high > right_highs.max()
             ):
-                highs.append(
-                    (
-                        df.index[i],
-                        float(df["high"].iloc[i])
-                    )
-                )
+                highs.append({
+                    "index": i,
+                    "price": float(current_high),
+                    "time": df.iloc[i]["timestamp"]
+                })
 
             # Swing Low
             if (
-                df["low"].iloc[i] < df["low"].iloc[i - 1]
-                and df["low"].iloc[i] < df["low"].iloc[i - 2]
-                and df["low"].iloc[i] < df["low"].iloc[i + 1]
-                and df["low"].iloc[i] < df["low"].iloc[i + 2]
+                current_low < left_lows.min()
+                and current_low < right_lows.min()
             ):
-                lows.append(
-                    (
-                        df.index[i],
-                        float(df["low"].iloc[i])
-                    )
-                )
+                lows.append({
+                    "index": i,
+                    "price": float(current_low),
+                    "time": df.iloc[i]["timestamp"]
+                })
 
         return highs, lows
 
 
 if __name__ == "__main__":
 
-     from app.collectors.candles import CandleCollector
+    from app.collectors.candles import CandleCollector
 
-     collector = CandleCollector()
+    collector = CandleCollector()
 
-     df = collector.get_candles()
+    df = collector.get_candles()
 
-     highs, lows = SwingAnalyzer.analyze(df)
+    highs, lows = SwingAnalyzer.analyze(df)
 
-     print("\n========== SWING HIGHS ==========")
+    print("\n========== LAST SWING HIGHS ==========\n")
 
-     for h in highs[-5:]:
+    for h in highs[-5:]:
         print(h)
 
-     print("\n========== SWING LOWS ==========")
+    print("\n========== LAST SWING LOWS ==========\n")
 
-     for l in lows[-5:]:
+    for l in lows[-5:]:
         print(l)

@@ -1,4 +1,6 @@
+from app.config import DEFAULT_INTERVAL
 from app.pipeline import TradingPipeline
+from app.telegram.notifier import notify_high_confidence_signal
 from app.utils.logging_config import setup_logging
 
 
@@ -38,6 +40,9 @@ def main():
     print("\nReasons:")
     for reason in signal["reasons"]:
         print(f"- {reason}")
+    if signal.get("explanation"):
+        print("\nExplanation:")
+        print(signal["explanation"])
 
     if result.swing_highs:
         print("\nLast Swing High:")
@@ -60,6 +65,9 @@ def main():
         print(f"TP2   : {risk['tp2']}")
         print(f"TP3   : {risk['tp3']}")
         print(f"RR    : 1:{risk['rr']}")
+
+    if notify_high_confidence_signal(result, timeframe=DEFAULT_INTERVAL):
+        print("\nTelegram notification sent ✅")
 
     print("\nSystem Ready ✅")
 

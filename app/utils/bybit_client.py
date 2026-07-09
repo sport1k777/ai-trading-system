@@ -76,6 +76,15 @@ class BybitClient:
 
         return df.sort_values("timestamp").reset_index(drop=True)
 
+    def reconnect(self) -> None:
+        """Create a fresh HTTP session after connectivity failures."""
+        logger.warning("Resetting Bybit HTTP session")
+        self.session = HTTP(
+            testnet=TESTNET,
+            api_key=BYBIT_API_KEY,
+            api_secret=BYBIT_API_SECRET,
+        )
+
 
 if __name__ == "__main__":
     from app.utils.logging_config import setup_logging

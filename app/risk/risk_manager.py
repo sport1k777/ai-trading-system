@@ -8,6 +8,7 @@ class RiskManager:
         "momentum": {"stop_mult": 1.2, "tp_r": 2.5},
         "pullback": {"stop_mult": 1.0, "tp_r": 2.0},
         "ai_signal": {"stop_mult": 0.9, "tp_r": 2.2},
+        "pro_signal": {"stop_mult": 0.9, "tp_r": 2.2},
     }
 
     @staticmethod

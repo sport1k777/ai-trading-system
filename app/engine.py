@@ -29,7 +29,12 @@ def main():
     print()
     print(f"Signal      : {signal['signal']}")
     print(f"Setup       : {signal.get('setup_type', 'n/a')}")
+    print(f"Confidence  : {signal.get('confidence', signal.get('confluence', 0))}/100")
     print(f"Score       : {signal['score']}")
+    if signal.get("entry"):
+        print(f"Entry       : {signal['entry']}")
+        print(f"Stop        : {signal.get('stop')}")
+        print(f"Take Profit : {signal.get('tp')}")
     print("\nReasons:")
     for reason in signal["reasons"]:
         print(f"- {reason}")

@@ -88,7 +88,7 @@ class TradingPipeline:
             swing_low=swing_low,
             swing_high=swing_high,
             tp_price=signal.get("tp_price"),
-            setup_type=signal.get("setup_type", "pullback"),
+            setup_type=signal.get("setup_type", "ai_signal"),
         )
 
         return AnalysisResult(

@@ -7,6 +7,7 @@ class RiskManager:
         "mean_reversion": {"stop_mult": 0.75, "tp_r": None},  # tp via bb_mid
         "momentum": {"stop_mult": 1.2, "tp_r": 2.5},
         "pullback": {"stop_mult": 1.0, "tp_r": 2.0},
+        "ai_signal": {"stop_mult": 0.9, "tp_r": 2.2},
     }
 
     @staticmethod
@@ -15,6 +16,13 @@ class RiskManager:
             return None
 
         params = RiskManager.SETUP_PARAMS.get(setup_type, {"stop_mult": STOP_ATR_MULT, "tp_r": TP_R_MULT})
+        if setup_type == "ai_signal":
+            try:
+                from app.analysis.feature_engine import load_config
+                cfg = load_config()
+                params = {"stop_mult": cfg.get("stop_mult", STOP_ATR_MULT), "tp_r": cfg.get("tp_r", TP_R_MULT)}
+            except ImportError:
+                pass
         stop_mult = params["stop_mult"]
         tp_r = params.get("tp_r", TP_R_MULT)
 

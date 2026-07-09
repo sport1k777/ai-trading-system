@@ -39,3 +39,31 @@ BACKTEST_MAX_HOLD_BARS = int(os.getenv("BACKTEST_MAX_HOLD_BARS", "30"))
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 
 BACKTEST_CACHE_PATH = os.getenv("BACKTEST_CACHE_PATH", ".cache/backtest_candles.csv")
+
+# --- AI Signal Engine ---
+AI_CONFIDENCE_THRESHOLD = float(os.getenv("AI_CONFIDENCE_THRESHOLD", "90"))
+
+AI_FEATURE_WEIGHTS = {
+    "EMA": 1.5,
+    "RSI": 1.2,
+    "MACD": 1.3,
+    "ADX": 1.0,
+    "ATR": 0.8,
+    "VWAP": 1.2,
+    "Bollinger Bands": 1.4,
+    "Volume": 1.0,
+    "Volume Profile": 1.1,
+    "Market Structure": 1.6,
+    "Liquidity Sweeps": 1.5,
+    "Order Blocks": 1.4,
+    "Fair Value Gaps": 1.3,
+    "Support/Resistance": 1.3,
+    "Trend Strength": 1.5,
+    "Multi-Timeframe": 1.8,
+    "Volatility": 0.9,
+    "Momentum": 1.2,
+    "Session Strength": 0.7,
+    "Candle Structure": 1.1,
+    "BOS": 1.4,
+    "CHOCH": 1.3,
+}

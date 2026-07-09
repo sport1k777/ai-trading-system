@@ -40,6 +40,53 @@ LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 
 BACKTEST_CACHE_PATH = os.getenv("BACKTEST_CACHE_PATH", ".cache/backtest_candles.csv")
 
+# --- Telegram ---
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
+TELEGRAM_ENABLED = os.getenv("TELEGRAM_ENABLED", "true").lower() in ("1", "true", "yes")
+TELEGRAM_NOTIFY_MIN_CONFIDENCE = float(os.getenv("TELEGRAM_NOTIFY_MIN_CONFIDENCE", "90"))
+
+# --- Signal Engine selection ---
+SIGNAL_ENGINE_VERSION = os.getenv("SIGNAL_ENGINE_VERSION", "v1").lower()
+
+# --- Signal Engine PRO ---
+PRO_MIN_CONDITIONS = int(os.getenv("PRO_MIN_CONDITIONS", "5"))
+PRO_MIN_CONFIDENCE = float(os.getenv("PRO_MIN_CONFIDENCE", "65"))
+PRO_MIN_DIRECTION_GAP = float(os.getenv("PRO_MIN_DIRECTION_GAP", "10"))
+PRO_CONDITION_WEIGHTS = {
+    "structure": float(os.getenv("PRO_WEIGHT_STRUCTURE", "15")),
+    "fvg": float(os.getenv("PRO_WEIGHT_FVG", "12")),
+    "order_block": float(os.getenv("PRO_WEIGHT_ORDER_BLOCK", "12")),
+    "liquidity": float(os.getenv("PRO_WEIGHT_LIQUIDITY", "15")),
+    "ema_trend": float(os.getenv("PRO_WEIGHT_EMA_TREND", "12")),
+    "rsi": float(os.getenv("PRO_WEIGHT_RSI", "10")),
+    "volume": float(os.getenv("PRO_WEIGHT_VOLUME", "12")),
+    "atr": float(os.getenv("PRO_WEIGHT_ATR", "12")),
+}
+
+# --- Signal Engine PRO V2 ---
+PRO_V2_HTF_INTERVAL = os.getenv("PRO_V2_HTF_INTERVAL", "60")
+PRO_V2_MIN_ADX = float(os.getenv("PRO_V2_MIN_ADX", "22"))
+PRO_V2_MIN_RR = float(os.getenv("PRO_V2_MIN_RR", "2.0"))
+PRO_V2_MIN_GRADE = os.getenv("PRO_V2_MIN_GRADE", "A")
+PRO_V2_SESSION_FILTER = os.getenv("PRO_V2_SESSION_FILTER", "false").lower() in ("1", "true", "yes")
+PRO_V2_BARS_PER_HTF = int(os.getenv("PRO_V2_BARS_PER_HTF", "4"))
+
+# --- 24/7 Signal Service ---
+SIGNAL_SERVICE_SCAN_INTERVAL_SECONDS = int(
+    os.getenv("SIGNAL_SERVICE_SCAN_INTERVAL_SECONDS", "60")
+)
+SIGNAL_SERVICE_SENT_STORE_PATH = os.getenv(
+    "SIGNAL_SERVICE_SENT_STORE_PATH",
+    ".cache/telegram_sent_signals.json",
+)
+SIGNAL_SERVICE_ERROR_BACKOFF_SECONDS = int(
+    os.getenv("SIGNAL_SERVICE_ERROR_BACKOFF_SECONDS", "10")
+)
+SIGNAL_SERVICE_RECONNECT_AFTER_ERRORS = int(
+    os.getenv("SIGNAL_SERVICE_RECONNECT_AFTER_ERRORS", "3")
+)
+
 # --- AI Signal Engine ---
 AI_CONFIDENCE_THRESHOLD = float(os.getenv("AI_CONFIDENCE_THRESHOLD", "90"))
 

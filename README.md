@@ -25,6 +25,14 @@ trading-engine
 python -m app.scanner
 trading-scanner
 
+# 24/7 Telegram signal service
+python -m app.services.signal_service
+python scripts/run_signal_service.py
+trading-signals
+
+# Signal Engine PRO V2 evaluation
+PYTHONPATH=. python scripts/pro_v2_eval.py
+
 # Walk-forward backtest with stop-loss / take-profit simulation
 python -m app.backtester
 trading-backtest
@@ -43,6 +51,9 @@ All settings live in `.env` (see `.env.example`):
 | `SIGNAL_BUY_THRESHOLD` | `55` | Minimum score for BUY |
 | `SIGNAL_SELL_THRESHOLD` | `-55` | Maximum score for SELL |
 | `SCANNER_SYMBOLS` | BTC,ETH,SOL,XRP,DOGE | Comma-separated symbols |
+| `SIGNAL_ENGINE_VERSION` | `v1` | `v1` (checklist PRO) or `v2` (sequential SMC) |
+| `PRO_V2_MIN_GRADE` | `A` | Minimum grade to emit signals in v2 |
+| `PRO_V2_MIN_RR` | `2.0` | Minimum risk/reward for v2 |
 
 ## Strategy
 

@@ -25,6 +25,8 @@ dev = [
 trading-engine = "app.engine:main"
 trading-scanner = "app.scanner:main"
 trading-backtest = "app.backtester:main"
+trading-signals = "app.services.signal_service:main"
+pro-v2-eval = "app.backtest.pro_backtester:run_pro_v2_backtest"
 
 [tool.setuptools.packages.find]
 where = ["."]

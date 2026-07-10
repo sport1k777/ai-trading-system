@@ -37,4 +37,6 @@ mkdir -p "$(dirname "$OUT")"
 } | tee "$OUT"
 
 echo ""
-echo "Saved to $OUT"
+echo "=== Log summary ==="
+cd /opt/ai-trading-system
+PYTHONPATH=. ./venv/bin/python scripts/analyze_diagnostic_logs.py "$OUT" 2>&1 || true

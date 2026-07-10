@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Optional
 import pandas as pd
 
 from app.analysis.market_context import MarketContext, MarketContextBuilder
+from app.analysis.poi_proximity import near_bearish_poi, near_bullish_poi
 from app.analysis.pro.conditions import evaluate_all, is_volatility_tradeable
 from app.analysis.pro.confluence import pick_direction, score_confluence
 from app.analysis.pro_v2.confirmations import (
@@ -111,18 +112,16 @@ def _order_block_pass(ctx: MarketContext, direction: str) -> tuple[bool, str]:
     if ob:
         if direction == "BUY" and ob.get("bullish"):
             b = ob["bullish"]
-            in_zone = b["low"] <= ctx.price <= b["high"] * 1.005
-            if in_zone:
+            if near_bullish_poi(ctx.price, b["low"], b["high"]):
                 return True, f"Bullish OB {b['low']:.2f}–{b['high']:.2f}"
         if direction == "SELL" and ob.get("bearish"):
             b = ob["bearish"]
-            in_zone = b["low"] * 0.995 <= ctx.price <= b["high"]
-            if in_zone:
+            if near_bearish_poi(ctx.price, b["low"], b["high"]):
                 return True, f"Bearish OB {b['low']:.2f}–{b['high']:.2f}"
     if ok and "OB" in reason:
         return True, reason
     if ob:
-        return False, "Order block present but price outside aligned zone"
+        return False, "Order block present but price outside 0.3% proximity"
     return False, reason if not ok else "No aligned order block"
 
 
@@ -131,15 +130,15 @@ def _fvg_pass(ctx: MarketContext, direction: str) -> tuple[bool, str]:
     fvg = ctx.fvg
     if fvg:
         if direction == "BUY" and fvg.get("type") == "BULLISH":
-            if fvg["bottom"] <= ctx.price <= fvg["top"] * 1.005:
+            if near_bullish_poi(ctx.price, fvg["bottom"], fvg["top"]):
                 return True, f"Bullish FVG {fvg['bottom']:.2f}–{fvg['top']:.2f}"
         if direction == "SELL" and fvg.get("type") == "BEARISH":
-            if fvg["bottom"] * 0.995 <= ctx.price <= fvg["top"]:
+            if near_bearish_poi(ctx.price, fvg["bottom"], fvg["top"]):
                 return True, f"Bearish FVG {fvg['bottom']:.2f}–{fvg['top']:.2f}"
     if ok and "FVG" in reason:
         return True, reason
     if fvg:
-        return False, f"Active {fvg.get('type', 'unknown')} FVG not engaged"
+        return False, f"Active {fvg.get('type', 'unknown')} FVG outside 0.3% proximity"
     return False, "No active FVG"
 
 
@@ -587,8 +586,8 @@ def _analysis_notes(
             )
         if fail_counts.get("FVG", 0) >= n * 0.7 or fail_counts.get("Order Block", 0) >= n * 0.7:
             notes.append(
-                "Price must be **inside** an active FVG or order block zone. "
-                "Most of the time price trades outside these zones, so confluence rarely reaches 5 factors."
+                "Price must be **within 0.3%** of an active FVG or order block zone. "
+                "Wider proximity helps, but confluence may still fall short of 5 factors."
             )
         telegram_blocks = sum(1 for d in diagnostics if d.telegram_blocked)
         engine_hits = sum(1 for d in diagnostics if d.engine_signal in ("BUY", "SELL"))

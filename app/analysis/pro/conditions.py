@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pandas as pd
 
+from app.analysis.poi_proximity import near_bearish_poi, near_bullish_poi
 from app.analysis.pro.models import ConditionResult
 
 
@@ -40,21 +41,21 @@ def evaluate_fvg(fvg: dict | None, price: float, *, weight: float) -> ConditionR
         return ConditionResult("Fair Value Gap", "NEUTRAL", False, weight, "No active FVG")
 
     top, bottom = float(fvg["top"]), float(fvg["bottom"])
-    if fvg["type"] == "BULLISH" and bottom <= price <= top * 1.005:
+    if fvg["type"] == "BULLISH" and near_bullish_poi(price, bottom, top):
         return ConditionResult(
             "Fair Value Gap",
             "LONG",
             True,
             weight,
-            f"Price inside bullish FVG ({bottom:.2f}–{top:.2f})",
+            f"Price within 0.3% of bullish FVG ({bottom:.2f}–{top:.2f})",
         )
-    if fvg["type"] == "BEARISH" and bottom * 0.995 <= price <= top:
+    if fvg["type"] == "BEARISH" and near_bearish_poi(price, bottom, top):
         return ConditionResult(
             "Fair Value Gap",
             "SHORT",
             True,
             weight,
-            f"Price inside bearish FVG ({bottom:.2f}–{top:.2f})",
+            f"Price within 0.3% of bearish FVG ({bottom:.2f}–{top:.2f})",
         )
     return ConditionResult(
         "Fair Value Gap",
@@ -75,23 +76,23 @@ def evaluate_order_block(
         return ConditionResult("Order Block", "NEUTRAL", False, weight, "No active order block")
 
     bullish = order_block.get("bullish")
-    if bullish and bullish["low"] <= price <= bullish["high"]:
+    if bullish and near_bullish_poi(price, bullish["low"], bullish["high"]):
         return ConditionResult(
             "Order Block",
             "LONG",
             True,
             weight,
-            f"Price reacting in bullish OB ({bullish['low']:.2f}–{bullish['high']:.2f})",
+            f"Price within 0.3% of bullish OB ({bullish['low']:.2f}–{bullish['high']:.2f})",
         )
 
     bearish = order_block.get("bearish")
-    if bearish and bearish["low"] <= price <= bearish["high"]:
+    if bearish and near_bearish_poi(price, bearish["low"], bearish["high"]):
         return ConditionResult(
             "Order Block",
             "SHORT",
             True,
             weight,
-            f"Price reacting in bearish OB ({bearish['low']:.2f}–{bearish['high']:.2f})",
+            f"Price within 0.3% of bearish OB ({bearish['low']:.2f}–{bearish['high']:.2f})",
         )
 
     return ConditionResult(

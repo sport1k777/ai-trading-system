@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from app.analysis.market_context import MarketContext
+from app.analysis.poi_proximity import near_bearish_poi, near_bullish_poi
 from app.analysis.pro_v2.dealing_range import compute_dealing_range, zone_allows
 from app.analysis.pro_v2.displacement import detect_displacement
 from app.analysis.pro_v2.htf_bias import evaluate_htf_bias, htf_allows
@@ -18,18 +19,18 @@ def _poi_return(ctx: MarketContext, direction: str) -> tuple[bool, str]:
     if direction == "BUY":
         if ob and ob.get("bullish"):
             b = ob["bullish"]
-            if b["low"] <= price <= b["high"] * 1.005:
+            if near_bullish_poi(price, b["low"], b["high"]):
                 return True, f"Return to bullish OB ({b['low']:.2f}–{b['high']:.2f})"
         if fvg and fvg.get("type") == "BULLISH":
-            if fvg["bottom"] <= price <= fvg["top"] * 1.005:
+            if near_bullish_poi(price, fvg["bottom"], fvg["top"]):
                 return True, f"Return to bullish FVG ({fvg['bottom']:.2f}–{fvg['top']:.2f})"
     else:
         if ob and ob.get("bearish"):
             b = ob["bearish"]
-            if b["low"] * 0.995 <= price <= b["high"]:
+            if near_bearish_poi(price, b["low"], b["high"]):
                 return True, f"Return to bearish OB ({b['low']:.2f}–{b['high']:.2f})"
         if fvg and fvg.get("type") == "BEARISH":
-            if fvg["bottom"] * 0.995 <= price <= fvg["top"]:
+            if near_bearish_poi(price, fvg["bottom"], fvg["top"]):
                 return True, f"Return to bearish FVG ({fvg['bottom']:.2f}–{fvg['top']:.2f})"
 
     return False, "No POI return (OB/FVG)"

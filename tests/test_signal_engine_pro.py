@@ -76,6 +76,23 @@ class TestConditions:
         assert result.aligned is True
         assert result.direction == "LONG"
 
+    def test_fvg_bullish_within_proximity(self):
+        fvg = {"type": "BULLISH", "top": 111.0, "bottom": 109.0}
+        result = evaluate_fvg(fvg, 108.72, weight=12)
+        assert result.aligned is True
+        assert "0.3%" in result.reason
+
+    def test_order_block_bullish_within_proximity(self):
+        ob = {"bullish": {"low": 109.0, "high": 111.0}, "bearish": None}
+        result = evaluate_order_block(ob, 108.72, weight=12)
+        assert result.aligned is True
+        assert "0.3%" in result.reason
+
+    def test_fvg_outside_proximity(self):
+        fvg = {"type": "BULLISH", "top": 111.0, "bottom": 109.0}
+        result = evaluate_fvg(fvg, 108.0, weight=12)
+        assert result.aligned is False
+
     def test_liquidity_sell_side_sweep_long(self):
         liq = {"type": "SELL_SIDE_SWEEP", "level": 100.0, "price": 100.5}
         result = evaluate_liquidity(liq, weight=15)

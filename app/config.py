@@ -62,6 +62,8 @@ PRO_CONDITION_WEIGHTS = {
     "rsi": float(os.getenv("PRO_WEIGHT_RSI", "10")),
     "volume": float(os.getenv("PRO_WEIGHT_VOLUME", "12")),
     "atr": float(os.getenv("PRO_WEIGHT_ATR", "12")),
+    "adx": float(os.getenv("PRO_WEIGHT_ADX", "10")),
+    "htf": float(os.getenv("PRO_WEIGHT_HTF", "12")),
 }
 
 # --- Signal Engine PRO V2 ---
@@ -76,6 +78,15 @@ PRO_V2_BARS_PER_HTF = int(os.getenv("PRO_V2_BARS_PER_HTF", "4"))
 STRUCTURE_BOS_LOOKBACK = int(os.getenv("STRUCTURE_BOS_LOOKBACK", "12"))
 STRUCTURE_CHOCH_LOOKBACK = int(os.getenv("STRUCTURE_CHOCH_LOOKBACK", "12"))
 STRUCTURE_HTF_LOOKBACK = int(os.getenv("STRUCTURE_HTF_LOOKBACK", "8"))
+
+# --- Adaptive market regime ---
+REGIME_STRONG_ADX = float(os.getenv("REGIME_STRONG_ADX", "28"))
+REGIME_WEAK_ADX = float(os.getenv("REGIME_WEAK_ADX", "18"))
+REGIME_HIGH_VOL_ATR_PCT = float(os.getenv("REGIME_HIGH_VOL_ATR_PCT", "3.5"))
+REGIME_LOW_VOL_ATR_PCT = float(os.getenv("REGIME_LOW_VOL_ATR_PCT", "0.35"))
+REGIME_POI_TOLERANCE_HIGH = float(os.getenv("REGIME_POI_TOLERANCE_HIGH", "0.005"))
+REGIME_POI_TOLERANCE_LOW = float(os.getenv("REGIME_POI_TOLERANCE_LOW", "0.002"))
+REGIME_LOW_VOL_TP_R_MULT = float(os.getenv("REGIME_LOW_VOL_TP_R_MULT", "0.85"))
 
 # --- 24/7 Signal Service ---
 SIGNAL_SERVICE_SCAN_INTERVAL_SECONDS = int(

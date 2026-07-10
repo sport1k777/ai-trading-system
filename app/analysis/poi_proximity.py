@@ -20,9 +20,9 @@ def near_zone(
     return tol_low <= price <= tol_high
 
 
-def near_bullish_poi(price: float, low: float, high: float) -> bool:
-    return near_zone(price, low, high)
+def near_bullish_poi(price: float, low: float, high: float, *, pct: float | None = None) -> bool:
+    return near_zone(price, low, high, pct=pct if pct is not None else PROXIMITY_PCT)
 
 
-def near_bearish_poi(price: float, low: float, high: float) -> bool:
-    return near_zone(price, low, high)
+def near_bearish_poi(price: float, low: float, high: float, *, pct: float | None = None) -> bool:
+    return near_zone(price, low, high, pct=pct if pct is not None else PROXIMITY_PCT)

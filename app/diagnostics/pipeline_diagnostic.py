@@ -8,6 +8,12 @@ from typing import TYPE_CHECKING, Optional
 import pandas as pd
 
 from app.analysis.market_context import MarketContext, MarketContextBuilder
+from app.analysis.market_regime import (
+    build_regime_profile,
+    detect_regime_from_context,
+    is_volatility_tradeable_regime,
+    validate_regime_confirmations,
+)
 from app.analysis.poi_proximity import near_bearish_poi, near_bullish_poi
 from app.analysis.pro.conditions import evaluate_all, is_volatility_tradeable
 from app.analysis.pro.confluence import pick_direction, score_confluence
@@ -69,6 +75,9 @@ class ScanDiagnostic:
     rejection_reason: str = ""
     telegram_blocked: bool = False
     would_alert: bool = False
+    regime: str = ""
+    regime_trend: str = ""
+    regime_volatility: str = ""
     final_decision: str = "WAIT"
 
     @property
@@ -170,8 +179,9 @@ def _adx_pass(ctx: MarketContext, *, min_adx: float) -> tuple[bool, str]:
 
 
 def _atr_pass(ctx: MarketContext) -> tuple[bool, str]:
-    ok, reason = is_volatility_tradeable(ctx.last)
-    return ok, reason
+    regime = ctx.regime or detect_regime_from_context(ctx)
+    profile = build_regime_profile(regime)
+    return is_volatility_tradeable_regime(ctx.last, profile)
 
 
 def _htf_pass_v2(ctx: MarketContext, direction: str) -> tuple[bool, str]:
@@ -218,6 +228,28 @@ def _build_checks_v1(ctx: MarketContext, direction: str) -> list[CheckResult]:
     rsi_ok, rsi_detail = _rsi_pass_v1(ctx, direction)
     atr_ok, atr_detail = _atr_pass(ctx)
 
+    regime = ctx.regime or detect_regime_from_context(ctx)
+    confluence = score_confluence(
+        last=ctx.last,
+        trend=ctx.trend,
+        bos=ctx.bos,
+        choch=ctx.choch,
+        liquidity=ctx.liquidity,
+        order_block=ctx.order_block,
+        fvg=ctx.fvg,
+        htf_trend=ctx.htf_trend,
+        regime=regime,
+    )
+    regime_ok, regime_detail = validate_regime_confirmations(
+        regime,
+        direction,
+        confluence.conditions,
+        trend=ctx.trend,
+        htf_trend=ctx.htf_trend,
+        bos=ctx.bos,
+        choch=ctx.choch,
+    )
+
     return [
         CheckResult("HTF", htf_ok, htf_detail),
         CheckResult("BOS", bos_ok, bos_detail),
@@ -229,6 +261,7 @@ def _build_checks_v1(ctx: MarketContext, direction: str) -> list[CheckResult]:
         CheckResult("ADX", adx_ok, adx_detail),
         CheckResult("RSI", rsi_ok, rsi_detail),
         CheckResult("ATR", atr_ok, atr_detail),
+        CheckResult("Regime", regime_ok, regime_detail),
     ]
 
 
@@ -263,6 +296,7 @@ def _build_checks_v2(ctx: MarketContext, direction: str) -> list[CheckResult]:
 
 
 def _v1_confidence(ctx: MarketContext, direction: str) -> tuple[float, str]:
+    regime = ctx.regime or detect_regime_from_context(ctx)
     confluence = score_confluence(
         last=ctx.last,
         trend=ctx.trend,
@@ -271,6 +305,8 @@ def _v1_confidence(ctx: MarketContext, direction: str) -> tuple[float, str]:
         liquidity=ctx.liquidity,
         order_block=ctx.order_block,
         fvg=ctx.fvg,
+        htf_trend=ctx.htf_trend,
+        regime=regime,
     )
     picked, confidence, _ = pick_direction(
         confluence,
@@ -418,6 +454,13 @@ def diagnose_scan(
         final_decision = "WAIT"
 
     structure = result.structure or signal.get("structure", "UNKNOWN")
+    regime_label = signal.get("market_regime", "")
+    regime_trend = signal.get("regime_trend", "")
+    regime_volatility = signal.get("regime_volatility", "")
+    if not regime_label and ctx.regime:
+        regime_label = ctx.regime.label
+        regime_trend = ctx.regime.trend_regime
+        regime_volatility = ctx.regime.volatility_regime
 
     return ScanDiagnostic(
         symbol=result.symbol,
@@ -435,6 +478,9 @@ def diagnose_scan(
         telegram_blocked=telegram_blocked,
         would_alert=would_alert,
         final_decision=final_decision,
+        regime=regime_label,
+        regime_trend=regime_trend,
+        regime_volatility=regime_volatility,
     )
 
 
@@ -480,6 +526,7 @@ def format_diagnostic_block(diag: ScanDiagnostic) -> str:
 
     lines = [
         diag.symbol,
+        f"Market regime: {diag.regime or 'Unknown'}",
         line("HTF bias", "HTF"),
         f"Market structure: {diag.structure}",
         line("BOS", "BOS"),
@@ -491,6 +538,7 @@ def format_diagnostic_block(diag: ScanDiagnostic) -> str:
         line("ADX", "ADX"),
         line("ATR", "ATR"),
         line("RSI", "RSI"),
+        line("Regime gate", "Regime"),
         f"Confidence score: {diag.confidence:.1f}",
         f"Final decision: {diag.final_decision}",
     ]

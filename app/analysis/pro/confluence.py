@@ -2,9 +2,15 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING, Optional
+
+from app.analysis.market_regime import RegimeProfile, build_regime_profile
 from app.analysis.pro.conditions import evaluate_all
 from app.analysis.pro.models import ConfluenceScore, ConditionResult
 from app.config import PRO_CONDITION_WEIGHTS
+
+if TYPE_CHECKING:
+    from app.analysis.market_regime import MarketRegime
 
 
 def score_confluence(
@@ -17,8 +23,17 @@ def score_confluence(
     order_block: dict | None,
     fvg: dict | None,
     weights: dict[str, float] | None = None,
+    htf_trend: str = "SIDEWAYS",
+    regime: Optional[MarketRegime] = None,
+    profile: Optional[RegimeProfile] = None,
 ) -> ConfluenceScore:
-    active_weights = weights or PRO_CONDITION_WEIGHTS
+    active_profile = profile or (build_regime_profile(regime) if regime else None)
+    active_weights = weights or (active_profile.weights if active_profile else PRO_CONDITION_WEIGHTS)
+
+    poi_tol = active_profile.poi_tolerance_pct if active_profile else None
+    atr_min = active_profile.atr_min if active_profile else 0.15
+    atr_max = active_profile.atr_max if active_profile else 5.0
+
     conditions = evaluate_all(
         last=last,
         trend=trend,
@@ -28,6 +43,10 @@ def score_confluence(
         order_block=order_block,
         fvg=fvg,
         weights=active_weights,
+        htf_trend=htf_trend,
+        poi_tolerance_pct=poi_tol,
+        atr_min=atr_min,
+        atr_max=atr_max,
     )
 
     long_score = short_score = 0.0

@@ -15,6 +15,7 @@ from app.analysis.liquidity import LiquidityAnalyzer
 from app.analysis.order_block import OrderBlockAnalyzer
 from app.analysis.structure import StructureAnalyzer
 from app.analysis.structure_persistence import resolve_htf_trend, resolve_ltf_trend
+from app.analysis.market_regime import MarketRegime, detect_regime_from_context
 from app.analysis.swing import SwingAnalyzer
 from app.indicators.extended import ExtendedIndicators
 from app.indicators.signals import SignalIndicators
@@ -45,6 +46,7 @@ class MarketContext:
     htf_trend: str = "SIDEWAYS"
     htf_structure: str = "RANGE"
     htf_bos: str = "NO_BOS"
+    regime: MarketRegime | None = None
 
     @property
     def last(self) -> pd.Series:
@@ -153,6 +155,8 @@ class MarketContextBuilder:
             ctx.htf_trend = resolve_htf_trend(htf_view_df)
             ctx.htf_structure = StructureAnalyzer.analyze(htf_view_df)
             ctx.htf_bos = BOSAnalyzer.analyze(htf_view_df)
+
+        ctx.regime = detect_regime_from_context(ctx)
 
         logger.debug(
             "%s context: trend=%s structure=%s htf=%s",

@@ -12,7 +12,12 @@ from app.analysis.fvg import FVGAnalyzer
 from app.analysis.liquidity import LiquidityAnalyzer
 from app.analysis.order_block import OrderBlockAnalyzer
 from app.analysis.market_context import MarketContext
-from app.analysis.pro.conditions import is_volatility_tradeable
+from app.analysis.market_regime import (
+    build_regime_profile,
+    detect_market_regime,
+    is_volatility_tradeable_regime,
+    validate_regime_confirmations,
+)
 from app.analysis.pro.confluence import (
     build_explanation,
     conditions_to_feature_scores,
@@ -99,12 +104,29 @@ class SignalEnginePro:
         if not SignalEnginePro._ready(last):
             return SignalEnginePro._wait("Indicators not ready")
 
-        vol_ok, vol_reason = is_volatility_tradeable(last)
-        if not vol_ok:
-            return SignalEnginePro._wait(vol_reason)
+        htf_trend = context.htf_trend if context is not None else "SIDEWAYS"
+        regime = (
+            context.regime
+            if context is not None and context.regime is not None
+            else detect_market_regime(
+                last=last,
+                trend=trend,
+                structure=structure,
+                htf_trend=htf_trend,
+            )
+        )
+        profile = build_regime_profile(regime)
 
-        price = float(last["close"])
-        atr = float(last["atr"])
+        vol_ok, vol_reason = is_volatility_tradeable_regime(last, profile)
+        if not vol_ok:
+            return SignalEnginePro._wait(
+                vol_reason,
+                trend=trend,
+                structure=structure,
+                bos=bos,
+                choch=choch,
+                regime=regime,
+            )
 
         confluence = score_confluence(
             last=last,
@@ -114,6 +136,9 @@ class SignalEnginePro:
             liquidity=liquidity,
             order_block=order_block,
             fvg=fvg,
+            htf_trend=htf_trend,
+            regime=regime,
+            profile=profile,
         )
 
         direction, confidence, reasons = pick_direction(
@@ -142,6 +167,9 @@ class SignalEnginePro:
                 "long": confluence.long_hits,
                 "short": confluence.short_hits,
             },
+            market_regime=regime.label,
+            regime_trend=regime.trend_regime,
+            regime_volatility=regime.volatility_regime,
         )
 
         if direction is None:
@@ -152,6 +180,20 @@ class SignalEnginePro:
                 **meta,
             )
 
+        regime_ok, regime_reason = validate_regime_confirmations(
+            regime,
+            direction,
+            confluence.conditions,
+            trend=trend,
+            htf_trend=htf_trend,
+            bos=bos,
+            choch=choch,
+        )
+        if not regime_ok:
+            return SignalEnginePro._wait(f"Regime gate: {regime_reason}", **meta)
+
+        price = float(last["close"])
+        atr = float(last["atr"])
         sl_price = swing_lows[-1]["price"] if swing_lows else None
         sh_price = swing_highs[-1]["price"] if swing_highs else None
         risk = RiskManager.calculate(
@@ -161,11 +203,13 @@ class SignalEnginePro:
             swing_low=sl_price,
             swing_high=sh_price,
             setup_type="pro_signal",
+            tp_r_mult=profile.tp_r_mult,
+            stop_mult_factor=profile.stop_mult_factor,
         )
         if not risk:
             return SignalEnginePro._wait("Could not calculate risk levels", **meta)
 
-        reasons = [vol_reason, *reasons]
+        reasons = [f"Regime: {regime.label}", vol_reason, *reasons]
         explanation = build_explanation(
             direction,
             confidence,
@@ -219,6 +263,9 @@ class SignalEnginePro:
             "fvg": meta["fvg"],
             "swing_highs": meta["swing_highs"],
             "swing_lows": meta["swing_lows"],
+            "market_regime": meta.get("market_regime", ""),
+            "regime_trend": meta.get("regime_trend", ""),
+            "regime_volatility": meta.get("regime_volatility", ""),
         }
         if risk:
             payload["risk_reward"] = risk["rr"]
@@ -254,4 +301,7 @@ class SignalEnginePro:
             "fvg": meta.get("fvg"),
             "swing_highs": meta.get("swing_highs", []),
             "swing_lows": meta.get("swing_lows", []),
+            "market_regime": meta.get("market_regime", ""),
+            "regime_trend": meta.get("regime_trend", ""),
+            "regime_volatility": meta.get("regime_volatility", ""),
         }

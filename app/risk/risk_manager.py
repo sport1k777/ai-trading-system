@@ -12,7 +12,18 @@ class RiskManager:
     }
 
     @staticmethod
-    def calculate(price, atr, signal, swing_low=None, swing_high=None, tp_price=None, setup_type="trend"):
+    def calculate(
+        price,
+        atr,
+        signal,
+        swing_low=None,
+        swing_high=None,
+        tp_price=None,
+        setup_type="trend",
+        *,
+        tp_r_mult: float = 1.0,
+        stop_mult_factor: float = 1.0,
+    ):
         if signal not in ("BUY", "SELL") or atr is None or atr <= 0:
             return None
 
@@ -24,8 +35,9 @@ class RiskManager:
                 params = {"stop_mult": cfg.get("stop_mult", STOP_ATR_MULT), "tp_r": cfg.get("tp_r", TP_R_MULT)}
             except ImportError:
                 pass
-        stop_mult = params["stop_mult"]
-        tp_r = params.get("tp_r", TP_R_MULT)
+        stop_mult = params["stop_mult"] * stop_mult_factor
+        base_tp_r = params.get("tp_r", TP_R_MULT)
+        tp_r = (base_tp_r * tp_r_mult) if base_tp_r is not None else None
 
         if signal == "BUY":
             atr_stop = price - stop_mult * atr

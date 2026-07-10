@@ -10,13 +10,16 @@ from typing import Optional
 
 from app.config import (
     DEFAULT_INTERVAL,
+    PRO_V2_HTF_INTERVAL,
     SCANNER_SYMBOLS,
+    SIGNAL_ENGINE_VERSION,
     SIGNAL_SERVICE_ERROR_BACKOFF_SECONDS,
     SIGNAL_SERVICE_RECONNECT_AFTER_ERRORS,
     SIGNAL_SERVICE_SCAN_INTERVAL_SECONDS,
     SIGNAL_SERVICE_SENT_STORE_PATH,
     TELEGRAM_NOTIFY_MIN_CONFIDENCE,
 )
+from app.diagnostics.pipeline_diagnostic import diagnose_scan, format_diagnostic_block
 from app.pipeline import TradingPipeline
 from app.telegram.formatter import format_live_signal_message
 from app.telegram.notifier import TelegramNotifier
@@ -64,14 +67,38 @@ class SignalService:
             self.pipeline = TradingPipeline()
         self._consecutive_cycle_failures = 0
 
+    def _fetch_htf_df(self, symbol: str):
+        if SIGNAL_ENGINE_VERSION != "v2":
+            return None
+        try:
+            return self.pipeline.collector.get_candles(
+                symbol=symbol,
+                interval=PRO_V2_HTF_INTERVAL,
+                limit=120,
+            )
+        except Exception:
+            logger.warning("%s: HTF fetch failed for diagnostic context", symbol)
+            return None
+
+    def _log_scan_diagnostic(self, result, *, htf_df=None) -> None:
+        diag = diagnose_scan(
+            result,
+            timeframe=self.interval,
+            min_confidence=self.min_confidence,
+            htf_df=htf_df,
+        )
+        logger.info("Scan diagnostic\n%s", format_diagnostic_block(diag))
+
     def _process_symbol(self, symbol: str) -> bool:
         """Analyze one symbol and send Telegram alert when eligible. Returns True on success."""
+        htf_df = self._fetch_htf_df(symbol)
         result = self.pipeline.analyze(symbol=symbol, interval=self.interval)
+        self._log_scan_diagnostic(result, htf_df=htf_df)
+
         signal = result.signal
         direction = signal.get("signal")
 
         if direction not in ("BUY", "SELL"):
-            logger.debug("%s: no actionable signal (%s)", symbol, direction)
             return True
 
         confidence = float(signal.get("confidence", signal.get("confluence", 0)))

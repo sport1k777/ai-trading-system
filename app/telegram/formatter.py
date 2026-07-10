@@ -1,9 +1,11 @@
-"""Premium Telegram message formatting for AI trading signals."""
+"""Premium institutional Telegram formatting for AI trading signals."""
 
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Callable, Optional
+
+import pandas as pd
 
 from app.config import DEFAULT_INTERVAL
 
@@ -25,23 +27,44 @@ INTERVAL_LABELS = {
     "W": "1W",
 }
 
-TREND_LABELS = {
-    "BULLISH": ("📈", "Bullish"),
-    "BEARISH": ("📉", "Bearish"),
-    "SIDEWAYS": ("↔️", "Sideways / Range"),
+INTERVAL_MINUTES = {
+    "1": 1,
+    "3": 3,
+    "5": 5,
+    "15": 15,
+    "30": 30,
+    "60": 60,
+    "120": 120,
+    "240": 240,
+    "360": 360,
+    "720": 720,
+    "D": 1440,
+    "W": 10080,
 }
 
-REASON_CATEGORIES = (
-    ("EMA", "EMA"),
-    ("RSI", "RSI"),
-    ("ADX", "ADX"),
-    ("Volume", "Volume"),
-    ("Market Structure", "Market Structure"),
-    ("Order Blocks", "Order Block"),
-    ("Fair Value Gaps", "Fair Value Gap"),
-    ("Liquidity Sweeps", "Liquidity"),
-    ("Multi-Timeframe", "Multi\\-timeframe confirmation"),
-)
+GRADE_ICONS = {
+    "A+": "🏆",
+    "A": "⭐",
+    "B": "✦",
+    "C": "◦",
+}
+
+BOS_LABELS = {
+    "BULLISH_BOS": "Bullish BOS",
+    "BEARISH_BOS": "Bearish BOS",
+    "NO_BOS": "No BOS",
+}
+
+CHOCH_LABELS = {
+    "BULLISH_CHOCH": "Bullish CHOCH",
+    "BEARISH_CHOCH": "Bearish CHOCH",
+    "NO_CHOCH": "No CHOCH",
+}
+
+LIQUIDITY_LABELS = {
+    "BUY_SIDE_SWEEP": "Buy\\-side sweep",
+    "SELL_SIDE_SWEEP": "Sell\\-side sweep",
+}
 
 
 def format_timeframe(interval: str) -> str:
@@ -49,14 +72,21 @@ def format_timeframe(interval: str) -> str:
 
 
 def _md_escape(text: str) -> str:
-    """Escape text for Telegram MarkdownV2 outside of code spans."""
+    """Escape text for Telegram MarkdownV2."""
     for char in r"_*[]()~`>#+-=|{}.!":
         text = text.replace(char, f"\\{char}")
     return text
 
 
+def _divider(width: int = 24) -> str:
+    return "─" * width
+
+
+def _section(title: str) -> str:
+    return f"\n*▸ {_md_escape(title.upper())}*\n{_divider()}"
+
+
 def _price(value: float) -> str:
-    """Format price inside a MarkdownV2 code span."""
     if value >= 1000:
         formatted = f"{value:,.2f}"
     elif value >= 1:
@@ -66,44 +96,440 @@ def _price(value: float) -> str:
     return f"`{formatted}`"
 
 
-def _confidence_bar(confidence: float) -> str:
-    filled = min(10, max(0, int(round(confidence / 10))))
-    return "🟩" * filled + "⬜" * (10 - filled)
+def _pct_change(base: float, target: float) -> str:
+    if base == 0:
+        return "0\\.00%"
+    pct = (target - base) / base * 100
+    sign = "+" if pct >= 0 else ""
+    return f"{sign}{pct:.2f}%"
 
 
-def _trend_line(trend: str) -> str:
-    icon, label = TREND_LABELS.get(trend.upper(), ("📊", trend.title()))
-    return f"{icon} {_md_escape(label)}"
+def _confidence_bar(confidence: float, width: int = 12) -> str:
+    clamped = max(0.0, min(100.0, confidence))
+    filled = round(clamped / 100 * width)
+    return "█" * filled + "░" * (width - filled)
 
 
-def _feature_reason_lines(
-    feature_scores: list[dict],
+def _grade_display(grade: str) -> str:
+    icon = GRADE_ICONS.get(grade, "◦")
+    if grade in ("—", "", "None"):
+        return f"{icon} {_md_escape('N/A')}"
+    return f"{icon} *{_md_escape(grade)}*"
+
+
+def _fs_by_name(feature_scores: list[dict]) -> dict[str, dict]:
+    return {fs["name"]: fs for fs in feature_scores}
+
+
+def _score_aligned(fs: dict | None, direction: str, threshold: float = 70.0) -> bool:
+    if not fs:
+        return False
+    score = fs["buy_score"] if direction == "BUY" else fs["sell_score"]
+    return float(score) >= threshold
+
+
+def _names_aligned(
+    by_name: dict[str, dict],
+    names: tuple[str, ...],
     direction: str,
-) -> list[str]:
-    by_name = {fs["name"]: fs for fs in feature_scores}
-    lines: list[str] = []
+    threshold: float = 70.0,
+) -> bool:
+    for name in names:
+        if _score_aligned(by_name.get(name), direction, threshold):
+            return True
+    return False
 
-    for feature_name, display_name in REASON_CATEGORIES:
-        fs = by_name.get(feature_name)
-        if not fs:
-            lines.append(f"• {_md_escape(display_name)}: _Neutral_")
-            continue
 
-        score = fs["buy_score"] if direction == "BUY" else fs["sell_score"]
-        reason = fs.get("reason", "No data")
+def _gate_passed(gates: list[str], *needles: str) -> bool:
+    joined = " ".join(gates).lower()
+    return any(n.lower() in joined for n in needles)
 
-        if score >= 70:
-            prefix = "✅"
-        elif score >= 55:
-            prefix = "🟡"
-        else:
-            prefix = "⚪"
 
-        lines.append(
-            f"{prefix} *{_md_escape(display_name)}*: {_md_escape(reason)}"
+def _resolve_orderblock(signal: dict, result: AnalysisResult) -> dict | None:
+    return signal.get("orderblock") or result.order_block
+
+
+def _resolve_liquidity(signal: dict, result: AnalysisResult) -> dict | None:
+    return signal.get("liquidity") or result.liquidity
+
+
+def _resolve_fvg(signal: dict, result: AnalysisResult) -> dict | None:
+    return signal.get("fvg") or result.fvg
+
+
+def _format_htf_bias(signal: dict) -> str:
+    htf = (signal.get("htf_bias") or "").strip()
+    zone = (signal.get("dealing_range_zone") or "").strip()
+    if htf and zone:
+        return _md_escape(f"{htf} · {zone}")
+    if htf:
+        return _md_escape(htf)
+    if zone:
+        return _md_escape(zone)
+    return _md_escape("Neutral / unconfirmed")
+
+
+def _format_structure(result: AnalysisResult, signal: dict) -> str:
+    structure = result.structure or signal.get("structure", "RANGE")
+    bos = BOS_LABELS.get(result.bos or signal.get("bos", "NO_BOS"), "No BOS")
+    choch = CHOCH_LABELS.get(result.choch or signal.get("choch", "NO_CHOCH"), "No CHOCH")
+    trend = result.trend or signal.get("trend", "SIDEWAYS")
+    return _md_escape(f"{trend} · {structure} · {bos} · {choch}")
+
+
+def _format_liquidity(liquidity: dict | None, direction: str) -> str:
+    if not liquidity:
+        return _md_escape("No active sweep")
+    liq_type = liquidity.get("type", "")
+    label = LIQUIDITY_LABELS.get(liq_type, _md_escape(liq_type.replace("_", " ")))
+    level = liquidity.get("level")
+    if level is not None:
+        aligned = (
+            (direction == "BUY" and liq_type == "SELL_SIDE_SWEEP")
+            or (direction == "SELL" and liq_type == "BUY_SIDE_SWEEP")
         )
+        marker = "✅" if aligned else "⚠️"
+        return f"{marker} {label} @ {_price(float(level))}"
+    return f"⚠️ {label}"
 
+
+def _format_order_block(orderblock: dict | None, direction: str) -> str:
+    if not orderblock:
+        return _md_escape("No active order block")
+    if direction == "BUY":
+        ob = orderblock.get("bullish")
+        label = "Bullish OB"
+    else:
+        ob = orderblock.get("bearish")
+        label = "Bearish OB"
+    if not ob:
+        other = orderblock.get("bearish" if direction == "BUY" else "bullish")
+        if other:
+            return _md_escape(f"{label} absent · opposite zone active")
+        return _md_escape("No aligned order block")
+    low, high = float(ob["low"]), float(ob["high"])
+    return f"✅ {_md_escape(label)} {_price(low)} \\- {_price(high)}"
+
+
+def _format_fvg(fvg: dict | None, direction: str) -> str:
+    if not fvg:
+        return _md_escape("No active FVG")
+    fvg_type = fvg.get("type", "")
+    aligned = (direction == "BUY" and fvg_type == "BULLISH") or (
+        direction == "SELL" and fvg_type == "BEARISH"
+    )
+    marker = "✅" if aligned else "⚠️"
+    bottom = float(fvg.get("bottom", 0))
+    top = float(fvg.get("top", 0))
+    size = fvg.get("size")
+    size_txt = f" \\({_md_escape(str(size))}\\)" if size is not None else ""
+    return f"{marker} {_md_escape(fvg_type.title())} {_price(bottom)} \\- {_price(top)}{size_txt}"
+
+
+def _format_session(signal: dict, result: AnalysisResult) -> str:
+    fs = _fs_by_name(signal.get("feature_scores") or [])
+    for name in ("Session Strength", "Session"):
+        entry = fs.get(name)
+        if entry and entry.get("reason"):
+            return _md_escape(str(entry["reason"]))
+
+    for gate in signal.get("gates_passed") or []:
+        if "session" in gate.lower() or "london" in gate.lower() or "ny" in gate.lower():
+            return _md_escape(gate)
+
+    for gate in signal.get("gates_failed") or []:
+        if "session" in gate.lower():
+            return _md_escape(gate)
+
+    ts = result.df.iloc[-1].get("timestamp")
+    if ts is not None and not pd.isna(ts):
+        hour = pd.Timestamp(ts).hour
+        if 13 <= hour < 16:
+            return _md_escape("London/NY overlap (high activity)")
+        if 8 <= hour < 13:
+            return _md_escape("London session")
+        if 16 <= hour < 21:
+            return _md_escape("New York session")
+        return _md_escape("Asia / off\\-hours")
+
+    hour = datetime.now(timezone.utc).hour
+    if 13 <= hour < 16:
+        return _md_escape("London/NY overlap (high activity)")
+    if 8 <= hour < 13:
+        return _md_escape("London session")
+    if 16 <= hour < 21:
+        return _md_escape("New York session")
+    return _md_escape("Asia / off\\-hours")
+
+
+def _estimate_duration(interval: str, rr: float) -> str:
+    minutes = INTERVAL_MINUTES.get(interval, 15)
+    low_bars = max(3, int(rr * 2))
+    high_bars = max(low_bars + 2, int(rr * 6))
+    low_m = low_bars * minutes
+    high_m = high_bars * minutes
+    return _md_escape(_duration_label(low_m, high_m))
+
+
+def _duration_label(low_m: int, high_m: int) -> str:
+    def fmt(m: int) -> str:
+        if m < 60:
+            return f"{m}m"
+        if m < 1440:
+            h = m / 60
+            return f"{h:.0f}h" if h == int(h) else f"{h:.1f}h"
+        return f"{m / 1440:.1f}d"
+
+    return f"{fmt(low_m)} – {fmt(high_m)}"
+
+
+def _invalidation_reason(direction: str, risk: dict, result: AnalysisResult) -> str:
+    stop = float(risk["stop"])
+    entry = float(risk["entry"])
+    risk_pct = abs(entry - stop) / entry * 100 if entry else 0
+    if direction == "BUY":
+        base = f"Close below {_price(stop)} \\({_md_escape(f'{risk_pct:.2f}%')} risk\\)"
+        if result.structure == "DOWNTREND":
+            return _md_escape("Structure flip bearish · ") + base
+        return base
+    base = f"Close above {_price(stop)} \\({_md_escape(f'{risk_pct:.2f}%')} risk\\)"
+    if result.structure == "UPTREND":
+        return _md_escape("Structure flip bullish · ") + base
+    return base
+
+
+def _risk_level(grade: str, confidence: float) -> str:
+    if grade == "A+":
+        return "Low"
+    if grade == "A":
+        return "Moderate"
+    if grade == "B":
+        return "Elevated"
+    if confidence >= 85:
+        return "Moderate"
+    if confidence >= 70:
+        return "Elevated"
+    return "High"
+
+
+def _engine_label(setup_type: str) -> str:
+    if setup_type == "pro_v2_signal":
+        return "AI Trading System PRO V2"
+    return "AI Trading System PRO"
+
+
+def _build_confirmations(
+    signal: dict,
+    result: AnalysisResult,
+    direction: str,
+) -> list[tuple[str, bool]]:
+    fs = _fs_by_name(signal.get("feature_scores") or [])
+    gates = signal.get("gates_passed") or []
+    bos = signal.get("bos", result.bos)
+    choch = signal.get("choch", result.choch)
+    liquidity = _resolve_liquidity(signal, result)
+    orderblock = _resolve_orderblock(signal, result)
+    fvg = _resolve_fvg(signal, result)
+    trend = result.trend or signal.get("trend", "SIDEWAYS")
+    htf_bias = (signal.get("htf_bias") or "").lower()
+
+    checks: list[tuple[str, Callable[[], bool]]] = [
+        (
+            "HTF Bias",
+            lambda: (
+                (direction == "BUY" and "bullish" in htf_bias)
+                or (direction == "SELL" and "bearish" in htf_bias)
+                or _names_aligned(fs, ("HTF Bias", "Multi-Timeframe"), direction, 70)
+            ),
+        ),
+        (
+            "BOS",
+            lambda: (direction == "BUY" and bos == "BULLISH_BOS")
+            or (direction == "SELL" and bos == "BEARISH_BOS")
+            or _names_aligned(fs, ("Market Structure", "BOS", "Structure Break"), direction, 70),
+        ),
+        (
+            "CHOCH",
+            lambda: (direction == "BUY" and choch == "BULLISH_CHOCH")
+            or (direction == "SELL" and choch == "BEARISH_CHOCH")
+            or _names_aligned(fs, ("CHOCH",), direction, 70),
+        ),
+        (
+            "Liquidity Sweep",
+            lambda: (
+                (direction == "BUY" and liquidity and liquidity.get("type") == "SELL_SIDE_SWEEP")
+                or (direction == "SELL" and liquidity and liquidity.get("type") == "BUY_SIDE_SWEEP")
+                or _names_aligned(fs, ("Liquidity Sweep", "Liquidity Sweeps", "Liquidity"), direction, 70)
+            ),
+        ),
+        (
+            "Order Block",
+            lambda: _names_aligned(
+                fs, ("Order Block", "Order Blocks", "POI Return"), direction, 70
+            )
+            or bool(orderblock),
+        ),
+        (
+            "Fair Value Gap",
+            lambda: _names_aligned(fs, ("Fair Value Gap", "Fair Value Gaps"), direction, 70)
+            or bool(fvg),
+        ),
+        (
+            "EMA Trend",
+            lambda: (direction == "BUY" and trend == "BULLISH")
+            or (direction == "SELL" and trend == "BEARISH")
+            or _names_aligned(fs, ("EMA Trend", "EMA Stack", "EMA"), direction, 70),
+        ),
+        (
+            "ADX",
+            lambda: _gate_passed(gates, "ADX")
+            or _names_aligned(fs, ("ADX", "ADX Trend", "Trend Strength"), direction, 70),
+        ),
+        (
+            "RSI",
+            lambda: _names_aligned(fs, ("RSI",), direction, 55),
+        ),
+        (
+            "ATR",
+            lambda: _gate_passed(gates, "ATR", "Volatility")
+            or _names_aligned(fs, ("ATR Volatility", "ATR", "Volatility"), direction, 55),
+        ),
+        (
+            "Volume",
+            lambda: _names_aligned(fs, ("Volume", "Volume Profile"), direction, 70),
+        ),
+    ]
+
+    return [(label, check()) for label, check in checks]
+
+
+def _compact_checklist(confirmations: list[tuple[str, bool]]) -> list[str]:
+    """Two confirmations per line for a tighter mobile layout."""
+    short = {
+        "HTF Bias": "HTF",
+        "Liquidity Sweep": "Liq Sweep",
+        "Order Block": "OB",
+        "Fair Value Gap": "FVG",
+        "EMA Trend": "EMA",
+    }
+    lines: list[str] = []
+    row: list[str] = []
+    for label, ok in confirmations:
+        tag = short.get(label, label)
+        row.append(f"{'✅' if ok else '❌'} {_md_escape(tag)}")
+        if len(row) == 2:
+            lines.append(" · ".join(row))
+            row = []
+    if row:
+        lines.append(row[0])
     return lines
+
+
+def _format_premium_signal(
+    result: AnalysisResult,
+    *,
+    timeframe: str | None = None,
+    min_confidence: float = 90,
+) -> Optional[str]:
+    signal = result.signal
+    direction = signal.get("signal")
+    if direction not in ("BUY", "SELL"):
+        return None
+
+    confidence = float(signal.get("confidence", signal.get("confluence", 0)))
+    if confidence < min_confidence:
+        return None
+
+    risk = result.risk
+    if not risk:
+        return None
+
+    interval = timeframe or DEFAULT_INTERVAL
+    tf = format_timeframe(interval)
+    symbol = _md_escape(result.symbol)
+    grade = str(signal.get("grade") or "—")
+    setup_type = signal.get("setup_type", "pro_signal")
+    timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    current_price = float(result.price)
+
+    entry = float(risk["entry"])
+    stop = float(risk["stop"])
+    tp1 = float(risk["tp1"])
+    tp2 = float(risk["tp2"])
+    tp3 = float(risk["tp3"])
+    rr = float(risk["rr"])
+
+    signal_icon = "🟢" if direction == "BUY" else "🔴"
+    side = _md_escape("LONG" if direction == "BUY" else "SHORT")
+    signal_label = _md_escape(direction)
+
+    liquidity = _resolve_liquidity(signal, result)
+    orderblock = _resolve_orderblock(signal, result)
+    fvg = _resolve_fvg(signal, result)
+
+    confirmations = _build_confirmations(signal, result, direction)
+    hits = sum(1 for _, ok in confirmations if ok)
+    checklist = _compact_checklist(confirmations)
+
+    risk_level = _md_escape(_risk_level(grade, confidence))
+    engine = _md_escape(_engine_label(setup_type))
+    conf_bar = _confidence_bar(confidence)
+    narrative = (signal.get("narrative") or "").strip()
+
+    risk_pct = abs(entry - stop) / entry * 100 if entry else 0
+    reward_pct = abs(tp1 - entry) / entry * 100 if entry else 0
+
+    lines = [
+        f"🚀 *AI TRADING SYSTEM PRO*",
+        _divider(26),
+        "",
+        f"{signal_icon} *{signal_label}* · *{side}* · *{symbol}* · `{_md_escape(tf)}`",
+        f"💹 *Price* {_price(current_price)}",
+        "",
+        _section("Trade Setup"),
+        f"💰 *Entry*     {_price(entry)}",
+        f"🛑 *Stop Loss* {_price(stop)} \\({_md_escape(_pct_change(entry, stop))}\\)",
+        f"🎯 *TP1*       {_price(tp1)} \\({_md_escape(_pct_change(entry, tp1))}\\)",
+        f"🎯 *TP2*       {_price(tp2)} \\({_md_escape(_pct_change(entry, tp2))}\\)",
+        f"🎯 *TP3*       {_price(tp3)} \\({_md_escape(_pct_change(entry, tp3))}\\)",
+        f"📈 *R:R*       `1:{rr:.2f}` · *Risk* `{risk_pct:.2f}%` · *Reward* `{reward_pct:.2f}%`",
+        "",
+        _section("AI Confidence"),
+        f"⭐ *Grade* {_grade_display(grade)}",
+        f"🎯 *AI Confidence* *{confidence:.1f}%*",
+        conf_bar,
+        "",
+        _section("Market Context"),
+        f"🧭 *HTF Bias* {_format_htf_bias(signal)}",
+        f"🏛 *Structure* {_format_structure(result, signal)}",
+        f"💧 *Liquidity* {_format_liquidity(liquidity, direction)}",
+        f"📦 *Order Block* {_format_order_block(orderblock, direction)}",
+        f"⚡ *FVG* {_format_fvg(fvg, direction)}",
+        f"🕐 *Session* {_format_session(signal, result)}",
+        "",
+        _section("Confirmations"),
+        f"*Score* `{hits}/{len(confirmations)}` aligned",
+        *checklist,
+        "",
+        _section("Trade Plan"),
+        f"⏳ *Est\\. Duration* {_estimate_duration(interval, rr)}",
+        f"⚠️ *Invalidation* {_invalidation_reason(direction, risk, result)}",
+    ]
+
+    if narrative:
+        lines.extend([
+            f"📝 *Narrative* {_md_escape(narrative[:180])}",
+        ])
+
+    lines.extend([
+        "",
+        _divider(26),
+        f"⚠️ *Risk Level* {risk_level}",
+        f"⏱ *Signal Time \\(UTC\\)* {_md_escape(timestamp)}",
+        f"🤖 *Generated by {engine}*",
+    ])
+
+    return "\n".join(lines)
 
 
 def format_signal_message(
@@ -112,70 +538,12 @@ def format_signal_message(
     timeframe: str | None = None,
     min_confidence: float = 90,
 ) -> Optional[str]:
-    signal = result.signal
-    direction = signal.get("signal")
-    if direction not in ("BUY", "SELL"):
-        return None
-
-    confidence = float(signal.get("confidence", signal.get("confluence", 0)))
-    if confidence < min_confidence:
-        return None
-
-    risk = result.risk
-    if not risk:
-        return None
-
-    tf = format_timeframe(timeframe or DEFAULT_INTERVAL)
-    symbol = _md_escape(result.symbol)
-    trend = result.trend or signal.get("trend", "UNKNOWN")
-
-    if direction == "BUY":
-        header = "🟢 *BUY SIGNAL*"
-        action_icon = "🟢"
-    else:
-        header = "🔴 *SELL SIGNAL*"
-        action_icon = "🔴"
-
-    timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
-    feature_scores = signal.get("feature_scores") or []
-    reason_lines = _feature_reason_lines(feature_scores, direction)
-
-    lines = [
-        "⚡ *AI TRADING SIGNAL*",
-        header,
-        "",
-        f"{action_icon} *{_md_escape(direction)}*  ·  *{symbol}*  ·  *{_md_escape(tf)}*",
-        f"🕐 {_md_escape(timestamp)}",
-        "",
-        "━━━━━━━━━━━━━━━━━━━━",
-        "",
-        "💰 *Trade Setup*",
-        f"Entry Price: {_price(float(risk['entry']))}",
-        f"Stop Loss: {_price(float(risk['stop']))}",
-        "",
-        "🎯 *Take Profits*",
-        f"TP1: {_price(float(risk['tp1']))}",
-        f"TP2: {_price(float(risk['tp2']))}",
-        f"TP3: {_price(float(risk['tp3']))}",
-        "",
-        "━━━━━━━━━━━━━━━━━━━━",
-        "",
-        f"⚖️ *Risk / Reward:* `1:{float(risk['rr']):.2f}`",
-        f"🧠 *Confidence:* *{confidence:.1f}/100*",
-        _confidence_bar(confidence),
-        f"📊 *Market Trend:* {_trend_line(trend)}",
-        "",
-        "━━━━━━━━━━━━━━━━━━━━",
-        "",
-        "✅ *Reasons:*",
-        *reason_lines,
-        "",
-        "━━━━━━━━━━━━━━━━━━━━",
-        "",
-        "_Premium signal · AI Signal Engine_",
-    ]
-
-    return "\n".join(lines)
+    """Format a premium institutional signal alert for Telegram."""
+    return _format_premium_signal(
+        result,
+        timeframe=timeframe,
+        min_confidence=min_confidence,
+    )
 
 
 def format_live_signal_message(
@@ -184,67 +552,32 @@ def format_live_signal_message(
     timeframe: str | None = None,
     min_confidence: float = 90,
 ) -> Optional[str]:
-    """Format a 24/7 service alert with LONG/SHORT labels."""
-    signal = result.signal
-    direction = signal.get("signal")
-    if direction not in ("BUY", "SELL"):
-        return None
-
-    confidence = float(signal.get("confidence", signal.get("confluence", 0)))
-    if confidence < min_confidence:
-        return None
-
-    risk = result.risk
-    if not risk:
-        return None
-
-    side = "LONG" if direction == "BUY" else "SHORT"
-    side_icon = "🟢" if direction == "BUY" else "🔴"
-    tf = format_timeframe(timeframe or DEFAULT_INTERVAL)
-    symbol = _md_escape(result.symbol)
-    trend = result.trend or signal.get("trend", "UNKNOWN")
-    timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
-
-    feature_scores = signal.get("feature_scores") or []
-    reason_lines = _feature_reason_lines(feature_scores, direction)
-
-    lines = [
-        "⚡ *AI LIVE SIGNAL*",
-        "",
-        f"📈 *Symbol:* *{symbol}* \\({_md_escape(tf)}\\)",
-        f"{side_icon} *{side}*",
-        "",
-        f"💰 *Entry:* {_price(float(risk['entry']))}",
-        f"🛑 *Stop Loss:* {_price(float(risk['stop']))}",
-        f"🎯 *TP1:* {_price(float(risk['tp1']))}",
-        f"🎯 *TP2:* {_price(float(risk['tp2']))}",
-        f"🎯 *TP3:* {_price(float(risk['tp3']))}",
-        "",
-        f"📊 *Risk/Reward:* `1:{float(risk['rr']):.2f}`",
-        f"🤖 *Confidence:* *{confidence:.1f}/100*",
-        f"🏆 *Grade:* *{_md_escape(str(signal.get('grade', 'N/A')))}*",
-        f"📈 *Trend:* {_trend_line(trend)}",
-        "",
-        "📝 *Reasons:*",
-        *reason_lines,
-        "",
-        f"🕒 *Time \\(UTC\\):* {_md_escape(timestamp)}",
-    ]
-
-    return "\n".join(lines)
+    """Format a 24/7 service alert — same premium layout as format_signal_message."""
+    return _format_premium_signal(
+        result,
+        timeframe=timeframe,
+        min_confidence=min_confidence,
+    )
 
 
 def format_test_message() -> str:
     timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    bar = _confidence_bar(100.0)
     return (
-        "⚡ *AI TRADING SYSTEM*\n"
+        "🚀 *AI TRADING SYSTEM PRO*\n"
+        f"{_divider(26)}\n"
         "\n"
         "✅ *Telegram Integration Active*\n"
         "\n"
-        f"🕐 {_md_escape(timestamp)}\n"
+        "*▸ AI CONFIDENCE*\n"
+        f"{_divider()}\n"
+        "🎯 *AI Confidence* *100\\.0%*\n"
+        f"{bar}\n"
         "\n"
-        "High\\-confidence signals \\(≥90\\) will be delivered automatically "
-        "with premium formatting when `app.engine` generates a trade setup\\.\n"
+        "Institutional signal formatting is live\\. "
+        "High\\-confidence alerts will arrive with full trade context\\.\n"
         "\n"
-        "_Stay disciplined\\. Manage your risk\\._"
+        f"{_divider(26)}\n"
+        f"⏱ *Signal Time \\(UTC\\)* {_md_escape(timestamp)}\n"
+        "🤖 *Generated by AI Trading System PRO V2*"
     )

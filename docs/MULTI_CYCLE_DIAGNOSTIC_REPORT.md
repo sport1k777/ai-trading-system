@@ -1,22 +1,32 @@
 # Multi-Cycle Diagnostic Report
 
-- Total scans: **120**
-- Cycles: **24**
+- Total scans: **240**
+- Cycles: **48**
 - Symbols per cycle: **5**
 - Engine signals (BUY/SELL): **0**
 - Telegram-eligible: **0**
-- Order Block PASS: **26/120** (22%)
-- FVG PASS: **23/120** (19%)
+
+## Rejection breakdown (check failures)
+
+- Rejected by HTF: **96/240**
+- Rejected by BOS: **144/240**
+- Rejected by CHOCH: **144/240**
+- Rejected by Order Block: **192/240**
+- Rejected by FVG: **192/240**
+- Order Block PASS: **48/240** (20%)
+- FVG PASS: **48/240** (20%)
 
 ## Confidence distribution
 
-- 0-19: 50
-- 20-39: 70
-- 40-59: 0
+- 0-19: 48
+- 20-39: 144
+- 40-59: 48
 - 60-79: 0
 - 80-100: 0
-- min: 0.0 | max: 34.0 | avg: 18.1
+- min: 0.0 | max: 46.0 | avg: 27.4
 
 ## Top rejection reasons
 
-- Rejected because HTF failed: 120
+- Rejected because BOS failed: 96
+- Rejected because HTF failed: 96
+- Rejected because Order Block failed: 48

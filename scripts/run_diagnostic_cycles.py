@@ -48,6 +48,11 @@ def main() -> None:
 
     ob_pass = sum(1 for d in records if any(c.name == "Order Block" and c.passed for c in d.checks))
     fvg_pass = sum(1 for d in records if any(c.name == "FVG" and c.passed for c in d.checks))
+    htf_fail = sum(1 for d in records if any(c.name == "HTF" and not c.passed for c in d.checks))
+    bos_fail = sum(1 for d in records if any(c.name == "BOS" and not c.passed for c in d.checks))
+    choch_fail = sum(1 for d in records if any(c.name == "CHOCH" and not c.passed for c in d.checks))
+    ob_fail = sum(1 for d in records if any(c.name == "Order Block" and not c.passed for c in d.checks))
+    fvg_fail = sum(1 for d in records if any(c.name == "FVG" and not c.passed for c in d.checks))
 
     lines = [
         "# Multi-Cycle Diagnostic Report",
@@ -57,6 +62,14 @@ def main() -> None:
         f"- Symbols per cycle: **{len(SCANNER_SYMBOLS)}**",
         f"- Engine signals (BUY/SELL): **{signals}**",
         f"- Telegram-eligible: **{alerts}**",
+        "",
+        "## Rejection breakdown (check failures)",
+        "",
+        f"- Rejected by HTF: **{htf_fail}/{n}**",
+        f"- Rejected by BOS: **{bos_fail}/{n}**",
+        f"- Rejected by CHOCH: **{choch_fail}/{n}**",
+        f"- Rejected by Order Block: **{ob_fail}/{n}**",
+        f"- Rejected by FVG: **{fvg_fail}/{n}**",
         f"- Order Block PASS: **{ob_pass}/{n}** ({ob_pass/n*100:.0f}%)",
         f"- FVG PASS: **{fvg_pass}/{n}** ({fvg_pass/n*100:.0f}%)",
         "",

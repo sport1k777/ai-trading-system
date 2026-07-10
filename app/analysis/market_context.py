@@ -14,10 +14,10 @@ from app.analysis.fvg import FVGAnalyzer
 from app.analysis.liquidity import LiquidityAnalyzer
 from app.analysis.order_block import OrderBlockAnalyzer
 from app.analysis.structure import StructureAnalyzer
+from app.analysis.structure_persistence import resolve_htf_trend, resolve_ltf_trend
 from app.analysis.swing import SwingAnalyzer
 from app.indicators.extended import ExtendedIndicators
 from app.indicators.signals import SignalIndicators
-from app.indicators.trend import TrendAnalyzer
 
 logger = logging.getLogger(__name__)
 
@@ -130,14 +130,15 @@ class MarketContextBuilder:
             raw_htf = cls.resample_htf(analysis_df, bars_per_htf=bars_per_htf)
             htf_view = SignalIndicators.calculate(raw_htf) if len(raw_htf) >= 30 else pd.DataFrame()
 
+        structure = StructureAnalyzer.analyze(view)
         ctx = MarketContext(
             symbol=symbol,
             interval=interval,
             df=df,
             analysis_df=analysis_df,
             htf_df=htf_view if len(htf_view) >= 30 else None,
-            trend=TrendAnalyzer.detect_trend(view),
-            structure=StructureAnalyzer.analyze(view),
+            trend=resolve_ltf_trend(view, structure),
+            structure=structure,
             bos=BOSAnalyzer.analyze(view),
             choch=CHOCHAnalyzer.analyze(view),
             liquidity=LiquidityAnalyzer.analyze(view),
@@ -149,7 +150,7 @@ class MarketContextBuilder:
 
         if ctx.htf_df is not None and len(ctx.htf_df) >= 30:
             htf_view_df = ctx.htf_df.iloc[-60:] if len(ctx.htf_df) > 60 else ctx.htf_df
-            ctx.htf_trend = TrendAnalyzer.detect_trend(htf_view_df)
+            ctx.htf_trend = resolve_htf_trend(htf_view_df)
             ctx.htf_structure = StructureAnalyzer.analyze(htf_view_df)
             ctx.htf_bos = BOSAnalyzer.analyze(htf_view_df)
 

@@ -72,6 +72,11 @@ PRO_V2_MIN_GRADE = os.getenv("PRO_V2_MIN_GRADE", "A")
 PRO_V2_SESSION_FILTER = os.getenv("PRO_V2_SESSION_FILTER", "false").lower() in ("1", "true", "yes")
 PRO_V2_BARS_PER_HTF = int(os.getenv("PRO_V2_BARS_PER_HTF", "4"))
 
+# --- Structure persistence (closed-bar, no look-ahead) ---
+STRUCTURE_BOS_LOOKBACK = int(os.getenv("STRUCTURE_BOS_LOOKBACK", "12"))
+STRUCTURE_CHOCH_LOOKBACK = int(os.getenv("STRUCTURE_CHOCH_LOOKBACK", "12"))
+STRUCTURE_HTF_LOOKBACK = int(os.getenv("STRUCTURE_HTF_LOOKBACK", "8"))
+
 # --- 24/7 Signal Service ---
 SIGNAL_SERVICE_SCAN_INTERVAL_SECONDS = int(
     os.getenv("SIGNAL_SERVICE_SCAN_INTERVAL_SECONDS", "60")

@@ -1,7 +1,12 @@
 #!/usr/bin/env bash
 # Production deployment for Contabo VPS (or any Linux host with systemd).
 #
-# Usage:
+# PREFERRED: Git-based deployment on the VPS (preserves .env, venv, systemd):
+#   See docs/GIT_DEPLOYMENT.md
+#   ssh root@VPS 'bash /opt/ai-trading-system/scripts/deploy/deploy.sh'   # migrate once
+#   ssh root@VPS 'bash /opt/ai-trading-system/scripts/deploy/update.sh'   # routine updates
+#
+# This rsync script remains as a legacy/bootstrap fallback from your laptop:
 #   export DEPLOY_SSH="root@YOUR_VPS_IP"
 #   export DEPLOY_KEY="$HOME/.ssh/id_ed25519"   # optional
 #   ./scripts/deploy/contabo_deploy.sh

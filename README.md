@@ -81,6 +81,23 @@ Bybit API → CandleCollector → SignalIndicators → Analyzers → SignalGener
 
 All orchestration goes through `app.pipeline.TradingPipeline` to avoid duplicate work.
 
+## VPS deployment (Git)
+
+Production deploys use Git on the VPS — see **[docs/GIT_DEPLOYMENT.md](docs/GIT_DEPLOYMENT.md)**.
+
+```bash
+# Inspect state (none / manual / git)
+ssh root@YOUR_VPS 'bash -s' < scripts/deploy/inspect.sh
+
+# One-time migration from manual/rsync install (preserves .env, venv, systemd)
+ssh root@YOUR_VPS 'sudo bash /opt/ai-trading-system/scripts/deploy/deploy.sh'
+
+# Routine updates after migration
+ssh root@YOUR_VPS 'sudo bash /opt/ai-trading-system/scripts/deploy/update.sh'
+```
+
+Legacy laptop rsync deploy: `scripts/deploy/contabo_deploy.sh`
+
 ## Disclaimer
 
 This is a signal analysis and backtesting tool. It does **not** place live orders.

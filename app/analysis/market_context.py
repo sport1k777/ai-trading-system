@@ -76,11 +76,12 @@ class MarketContextBuilder:
     )
 
     @staticmethod
-    def _closed_bars(df: pd.DataFrame) -> pd.DataFrame:
+    def _closed_bars(df: pd.DataFrame, *, copy: bool = True) -> pd.DataFrame:
         """Exclude the forming candle to reduce repaint risk."""
         if len(df) < 3:
             return df
-        return df.iloc[:-1].copy()
+        view = df.iloc[:-1]
+        return view.copy() if copy else view
 
     @staticmethod
     def resample_htf(ltf_df: pd.DataFrame, bars_per_htf: int = 4) -> pd.DataFrame:
@@ -114,15 +115,17 @@ class MarketContextBuilder:
         interval: str = "15",
         htf_df: Optional[pd.DataFrame] = None,
         indicators_calculated: bool = False,
+        extended_calculated: bool = False,
         use_extended: bool = True,
         bars_per_htf: int = 4,
+        copy_closed_bars: bool = True,
     ) -> MarketContext:
         if not indicators_calculated:
             df = SignalIndicators.calculate(df)
-        if use_extended:
+        if use_extended and not extended_calculated:
             df = ExtendedIndicators.calculate(df)
 
-        analysis_df = cls._closed_bars(df)
+        analysis_df = cls._closed_bars(df, copy=copy_closed_bars)
         view = analysis_df.iloc[-LOOKBACK:] if len(analysis_df) > LOOKBACK else analysis_df
 
         if htf_df is not None and len(htf_df) >= 30:
@@ -143,12 +146,13 @@ class MarketContextBuilder:
             structure=structure,
             bos=BOSAnalyzer.analyze(view),
             choch=CHOCHAnalyzer.analyze(view),
-            liquidity=LiquidityAnalyzer.analyze(view),
+            liquidity=None,
             order_block=OrderBlockAnalyzer.analyze(view),
             fvg=FVGAnalyzer.analyze(view),
             swing_highs=SwingAnalyzer.analyze(view, lookback=50)[0],
             swing_lows=SwingAnalyzer.analyze(view, lookback=50)[1],
         )
+        ctx.liquidity = LiquidityAnalyzer.resolve(ctx)
 
         if ctx.htf_df is not None and len(ctx.htf_df) >= 30:
             htf_view_df = ctx.htf_df.iloc[-60:] if len(ctx.htf_df) > 60 else ctx.htf_df

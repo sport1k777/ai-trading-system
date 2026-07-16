@@ -44,7 +44,8 @@ BACKTEST_CACHE_PATH = os.getenv("BACKTEST_CACHE_PATH", ".cache/backtest_candles.
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
 TELEGRAM_ENABLED = os.getenv("TELEGRAM_ENABLED", "true").lower() in ("1", "true", "yes")
-TELEGRAM_NOTIFY_MIN_CONFIDENCE = float(os.getenv("TELEGRAM_NOTIFY_MIN_CONFIDENCE", "90"))
+# Telegram notification gate only — does not affect engine entry/scoring thresholds.
+TELEGRAM_NOTIFY_MIN_CONFIDENCE = float(os.getenv("TELEGRAM_NOTIFY_MIN_CONFIDENCE", "70"))
 
 # --- Signal Engine selection ---
 SIGNAL_ENGINE_VERSION = os.getenv("SIGNAL_ENGINE_VERSION", "v1").lower()

@@ -103,13 +103,26 @@ class SignalService:
 
         confidence = float(signal.get("confidence", signal.get("confluence", 0)))
         if confidence < self.min_confidence:
-            logger.debug(
-                "%s: confidence %.1f below threshold %.1f",
+            logger.info(
+                "%s: Telegram gate — confidence %.1f below threshold %.1f",
                 symbol,
                 confidence,
                 self.min_confidence,
             )
             return True
+
+        reasons = signal.get("reasons") or []
+        pass_reason = reasons[0] if reasons else (
+            f"Engine {direction} signal confidence {confidence:.1f} "
+            f">= Telegram threshold {self.min_confidence:.0f}"
+        )
+        logger.info(
+            "Telegram gate PASSED | symbol=%s direction=%s confidence=%.1f reason=%s",
+            symbol,
+            direction,
+            confidence,
+            pass_reason,
+        )
 
         risk = result.risk
         if not risk:

@@ -153,6 +153,7 @@ DEPLOY_PATHS=(
   "scripts/run_signal_service_prod.sh"
   "scripts/telegram_test.py"
   "scripts/run_signal_service.py"
+  "scripts/audit_24h.py"
   "deploy/systemd/ai-trading-signals.service"
   "pyproject.toml"
 )

@@ -1,3 +1,8 @@
+"""Market analysis pipeline — generates BUY/SELL/WAIT decisions only.
+
+SIGNAL-ONLY SYSTEM: computes signals and risk levels for alerts.
+Never executes trades or interacts with order/position endpoints.
+"""
 import logging
 from dataclasses import dataclass
 from typing import Optional

@@ -425,6 +425,17 @@ def _compact_checklist(confirmations: list[tuple[str, bool]]) -> list[str]:
     return lines
 
 
+def _format_signal_reason(signal: dict) -> str:
+    """Primary human-readable reason the engine emitted this signal."""
+    reasons = signal.get("reasons") or []
+    if reasons:
+        return _md_escape("; ".join(str(r) for r in reasons[:3]))
+    narrative = (signal.get("narrative") or "").strip()
+    if narrative:
+        return _md_escape(narrative[:200])
+    return _md_escape("Multi\\-factor confluence aligned with signal direction")
+
+
 def _format_premium_signal(
     result: AnalysisResult,
     *,
@@ -492,12 +503,13 @@ def _format_premium_signal(
         f"🎯 *TP1*       {_price(tp1)} \\({_md_escape(_pct_change(entry, tp1))}\\)",
         f"🎯 *TP2*       {_price(tp2)} \\({_md_escape(_pct_change(entry, tp2))}\\)",
         f"🎯 *TP3*       {_price(tp3)} \\({_md_escape(_pct_change(entry, tp3))}\\)",
-        f"📈 *R:R*       `1:{rr:.2f}` · *Risk* `{risk_pct:.2f}%` · *Reward* `{reward_pct:.2f}%`",
+        f"📈 *R:R*       `{_md_escape(f'1:{rr:.2f}')}` · *Risk* `{_md_escape(f'{risk_pct:.2f}%')}` · *Reward* `{_md_escape(f'{reward_pct:.2f}%')}`",
         "",
         _section("AI Confidence"),
         f"⭐ *Grade* {_grade_display(grade)}",
-        f"🎯 *AI Confidence* *{confidence:.1f}%*",
+        f"🎯 *AI Confidence* *{_md_escape(f'{confidence:.1f}%')}*",
         conf_bar,
+        f"📋 *Reason* {_format_signal_reason(signal)}",
         "",
         _section("Market Context"),
         f"🧭 *HTF Bias* {_format_htf_bias(signal)}",
@@ -557,6 +569,21 @@ def format_live_signal_message(
         result,
         timeframe=timeframe,
         min_confidence=min_confidence,
+    )
+
+
+def format_service_startup_message(
+    *,
+    symbol_count: int,
+    scan_interval_seconds: int,
+    min_confidence: float,
+) -> str:
+    """MarkdownV2-safe startup notification for the 24/7 signal service."""
+    return (
+        "🚀 *AI Signal Service Online*\n\n"
+        f"Scanning `{symbol_count}` symbols every "
+        f"`{scan_interval_seconds}s`\\.\n"
+        f"Alerts fire at confidence \\>\\= `{min_confidence:.0f}`\\."
     )
 
 

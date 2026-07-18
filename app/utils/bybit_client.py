@@ -1,3 +1,10 @@
+"""Read-only Bybit market data client.
+
+SIGNAL-ONLY SYSTEM: this module must never place, amend, or cancel orders,
+open/close positions, or call any Bybit trading or account-mutation endpoints.
+Allowed operations: public market data (klines, tickers, server time) only.
+"""
+
 import logging
 
 import pandas as pd
@@ -8,9 +15,29 @@ from app.utils.ssl_ca import ensure_ca_bundle
 
 logger = logging.getLogger(__name__)
 
+# Explicit allow-list — no trading / account mutation methods.
+_ALLOWED_SESSION_METHODS = frozenset({"get_server_time", "get_tickers", "get_kline"})
+
+
+class _ReadOnlySession:
+    """Proxy that blocks any Bybit session call outside the market-data allow-list."""
+
+    __slots__ = ("_session",)
+
+    def __init__(self, session: HTTP) -> None:
+        self._session = session
+
+    def __getattr__(self, name: str):
+        if name not in _ALLOWED_SESSION_METHODS:
+            raise RuntimeError(
+                f"SIGNAL-ONLY: Bybit trading endpoint blocked ({name!r}). "
+                "This system must not place or manage orders."
+            )
+        return getattr(self._session, name)
+
 
 class BybitClient:
-    """Single shared Bybit HTTP session for all exchange interactions."""
+    """Single shared Bybit HTTP session for read-only market data."""
 
     def __init__(self):
         ensure_ca_bundle()
@@ -19,6 +46,12 @@ class BybitClient:
             api_key=BYBIT_API_KEY,
             api_secret=BYBIT_API_SECRET,
         )
+
+    def __getattribute__(self, name: str):
+        attr = object.__getattribute__(self, name)
+        if name == "session":
+            return _ReadOnlySession(attr)
+        return attr
 
     def get_server_time(self):
         return self.session.get_server_time()

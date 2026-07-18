@@ -1,4 +1,9 @@
-"""24/7 continuous Telegram signal service built on the existing AI pipeline."""
+"""24/7 continuous Telegram signal service built on the existing AI pipeline.
+
+SIGNAL-ONLY SYSTEM: scans markets and sends BUY/SELL alerts to Telegram.
+Never places orders, opens positions, or calls trading endpoints.
+WAIT decisions are analyzed but never sent to Telegram.
+"""
 
 from __future__ import annotations
 

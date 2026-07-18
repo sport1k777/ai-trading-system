@@ -19,7 +19,11 @@ from app.config import (
     SIGNAL_SERVICE_SENT_STORE_PATH,
     TELEGRAM_NOTIFY_MIN_CONFIDENCE,
 )
-from app.diagnostics.pipeline_diagnostic import diagnose_scan, format_diagnostic_block
+from app.diagnostics.pipeline_diagnostic import (
+    diagnose_scan,
+    format_diagnostic_block,
+    log_decision_gate_audit,
+)
 from app.pipeline import TradingPipeline
 from app.telegram.formatter import format_live_signal_message
 from app.telegram.notifier import TelegramNotifier
@@ -112,6 +116,14 @@ class SignalService:
             diag.rejection_reason,
         )
         logger.info("Scan diagnostic\n%s", format_diagnostic_block(diag))
+        log_decision_gate_audit(
+            logger,
+            result,
+            diag,
+            timeframe=self.interval,
+            min_confidence=self.min_confidence,
+            htf_df=htf_df,
+        )
 
     def _process_symbol(self, symbol: str) -> bool:
         """Analyze one symbol and send Telegram alert when eligible. Returns True on success."""

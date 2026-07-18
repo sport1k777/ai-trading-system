@@ -8,6 +8,8 @@ from app.diagnostics.pipeline_diagnostic import (
     diagnose_scan,
     diagnose_scan_block,
     format_diagnostic_block,
+    format_gate_audit_block,
+    log_decision_gate_audit,
 )
 
 
@@ -88,3 +90,39 @@ def test_diagnose_scan_block_import_and_format():
     block = diagnose_scan_block(result, timeframe="15", min_confidence=70)
     assert "BTCUSDT" in block
     assert "Rejected because" in block
+
+
+def test_gate_audit_logs_every_decision_gate():
+    result = _make_result(signal="WAIT", confidence=0)
+    diag = diagnose_scan(result, timeframe="15", min_confidence=70)
+    audit = format_gate_audit_block(result, diag, timeframe="15", min_confidence=70)
+
+    assert "=== Decision Gate Audit | BTCUSDT" in audit
+    assert "GATE | Trend | FAIL" in audit
+    assert "GATE | HTF | FAIL" in audit
+    assert "GATE | Volume |" in audit
+    assert "GATE | Confluence BUY | FAIL" in audit
+    assert "GATE | Engine pick_direction | FAIL" in audit
+    assert "GATE | Telegram gate | FAIL" in audit
+    assert "diagnostic confidence=" in audit
+
+
+def test_log_decision_gate_audit_emits_lines(caplog):
+    import logging
+
+    caplog.set_level(logging.INFO)
+    result = _make_result(signal="WAIT", confidence=0)
+    diag = diagnose_scan(result, timeframe="15", min_confidence=70)
+    audit_logger = logging.getLogger("test.gate_audit")
+
+    log_decision_gate_audit(
+        audit_logger,
+        result,
+        diag,
+        timeframe="15",
+        min_confidence=70,
+    )
+
+    joined = "\n".join(record.message for record in caplog.records)
+    assert "GATE | BOS | FAIL" in joined
+    assert "GATE | Engine signal | FAIL" in joined

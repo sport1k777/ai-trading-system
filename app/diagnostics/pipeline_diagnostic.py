@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Optional
 
@@ -15,7 +16,8 @@ from app.analysis.market_regime import (
     validate_regime_confirmations,
 )
 from app.analysis.poi_proximity import near_bearish_poi, near_bullish_poi
-from app.analysis.pro.conditions import evaluate_all, is_volatility_tradeable
+from app.analysis.pro.conditions import evaluate_all, evaluate_volume, is_volatility_tradeable
+from app.analysis.pro.engine import SignalEnginePro
 from app.analysis.pro.confluence import pick_direction, score_confluence
 from app.analysis.pro_v2.confirmations import (
     check_ema_stack,
@@ -37,6 +39,7 @@ from app.analysis.pro_v2.liquidity_pools import liquidity_swept_recently
 from app.analysis.signal_generator import SignalGenerator
 from app.config import (
     MIN_ADX,
+    PRO_CONDITION_WEIGHTS,
     PRO_MIN_CONDITIONS,
     PRO_MIN_CONFIDENCE,
     PRO_MIN_DIRECTION_GAP,
@@ -184,6 +187,25 @@ def _atr_pass(ctx: MarketContext) -> tuple[bool, str]:
     return is_volatility_tradeable_regime(ctx.last, profile)
 
 
+def _trend_pass(ctx: MarketContext, direction: str) -> tuple[bool, str]:
+    trend = ctx.trend
+    if direction == "BUY":
+        ok = trend == "BULLISH"
+        return ok, f"LTF trend={trend}" + ("" if ok else " — need BULLISH for BUY")
+    ok = trend == "BEARISH"
+    return ok, f"LTF trend={trend}" + ("" if ok else " — need BEARISH for SELL")
+
+
+def _volume_pass(ctx: MarketContext, direction: str) -> tuple[bool, str]:
+    weight = PRO_CONDITION_WEIGHTS.get("volume", PRO_CONDITION_WEIGHTS["rsi"])
+    cond = evaluate_volume(ctx.last, weight=weight)
+    if direction == "BUY":
+        ok = cond.aligned and cond.direction == "LONG"
+    else:
+        ok = cond.aligned and cond.direction == "SHORT"
+    return ok, cond.reason
+
+
 def _htf_pass_v2(ctx: MarketContext, direction: str) -> tuple[bool, str]:
     bias = evaluate_htf_bias(ctx)
     ok = htf_allows(direction, bias)
@@ -219,6 +241,7 @@ def _candidate_direction_v2(ctx: MarketContext) -> str:
 
 
 def _build_checks_v1(ctx: MarketContext, direction: str) -> list[CheckResult]:
+    trend_ok, trend_detail = _trend_pass(ctx, direction)
     htf_ok, htf_detail = _htf_pass_v1(ctx, direction)
     bos_ok, bos_detail = _bos_pass(ctx, direction)
     choch_ok, choch_detail = _choch_pass(ctx, direction)
@@ -228,6 +251,7 @@ def _build_checks_v1(ctx: MarketContext, direction: str) -> list[CheckResult]:
     ema_ok, ema_detail = _ema_pass_v1(ctx, direction, ctx.trend)
     adx_ok, adx_detail = _adx_pass(ctx, min_adx=MIN_ADX)
     rsi_ok, rsi_detail = _rsi_pass_v1(ctx, direction)
+    vol_ok, vol_detail = _volume_pass(ctx, direction)
     atr_ok, atr_detail = _atr_pass(ctx)
 
     regime = ctx.regime or detect_regime_from_context(ctx)
@@ -254,6 +278,7 @@ def _build_checks_v1(ctx: MarketContext, direction: str) -> list[CheckResult]:
     )
 
     return [
+        CheckResult("Trend", trend_ok, trend_detail),
         CheckResult("HTF", htf_ok, htf_detail),
         CheckResult("BOS", bos_ok, bos_detail),
         CheckResult("CHOCH", choch_ok, choch_detail),
@@ -263,6 +288,7 @@ def _build_checks_v1(ctx: MarketContext, direction: str) -> list[CheckResult]:
         CheckResult("EMA", ema_ok, ema_detail),
         CheckResult("ADX", adx_ok, adx_detail),
         CheckResult("RSI", rsi_ok, rsi_detail),
+        CheckResult("Volume", vol_ok, vol_detail),
         CheckResult("ATR", atr_ok, atr_detail),
         CheckResult("Regime", regime_ok, regime_detail),
     ]
@@ -531,6 +557,7 @@ def format_diagnostic_block(diag: ScanDiagnostic) -> str:
     lines = [
         diag.symbol,
         f"Market regime: {diag.regime or 'Unknown'}",
+        line("Trend", "Trend"),
         line("HTF bias", "HTF"),
         f"Market structure: {diag.structure}",
         line("BOS", "BOS"),
@@ -540,8 +567,9 @@ def format_diagnostic_block(diag: ScanDiagnostic) -> str:
         line("FVG", "FVG"),
         line("EMA filter", "EMA"),
         line("ADX", "ADX"),
-        line("ATR", "ATR"),
         line("RSI", "RSI"),
+        line("Volume", "Volume"),
+        line("ATR", "ATR"),
         line("Regime gate", "Regime"),
         f"Confidence score: {diag.confidence:.1f}",
         f"Final decision: {diag.final_decision}",
@@ -569,6 +597,313 @@ def diagnose_scan_block(
             htf_df=htf_df,
         )
     )
+
+
+def _confluence_side_ok(
+    *,
+    hits: int,
+    score: float,
+    opposite_score: float,
+) -> tuple[bool, str]:
+    gap = score - opposite_score
+    ok = (
+        hits >= PRO_MIN_CONDITIONS
+        and score >= PRO_MIN_CONFIDENCE
+        and gap >= PRO_MIN_DIRECTION_GAP
+    )
+    detail = (
+        f"hits={hits}/{PRO_MIN_CONDITIONS} "
+        f"score={score:.1f}/{PRO_MIN_CONFIDENCE:.0f} "
+        f"gap={gap:.1f}/{PRO_MIN_DIRECTION_GAP:.0f}"
+    )
+    return ok, detail
+
+
+def _confluence_condition_pass(cond, direction: str) -> tuple[bool, str]:
+    if direction == "BUY":
+        ok = cond.aligned and cond.direction == "LONG"
+    elif direction == "SELL":
+        ok = cond.aligned and cond.direction == "SHORT"
+    else:
+        ok = cond.aligned
+    detail = cond.reason
+    if cond.aligned and cond.direction not in ("LONG", "SHORT"):
+        detail = f"{cond.reason} (neutral — no directional score)"
+    elif cond.aligned and not ok:
+        detail = f"{cond.reason} (aligned {cond.direction}, need {direction})"
+    return ok, detail
+
+
+def _build_engine_gate_checks_v1(
+    result: "AnalysisResult",
+    ctx: MarketContext,
+    diag: ScanDiagnostic,
+    *,
+    min_confidence: float,
+) -> list[CheckResult]:
+    signal = result.signal
+    regime = ctx.regime or detect_regime_from_context(ctx)
+    profile = build_regime_profile(regime)
+    confluence = score_confluence(
+        last=ctx.last,
+        trend=ctx.trend,
+        bos=ctx.bos,
+        choch=ctx.choch,
+        liquidity=ctx.liquidity,
+        order_block=ctx.order_block,
+        fvg=ctx.fvg,
+        htf_trend=ctx.htf_trend,
+        structure=ctx.structure,
+        regime=regime,
+        profile=profile,
+    )
+    long_ok, long_detail = _confluence_side_ok(
+        hits=confluence.long_hits,
+        score=confluence.long_score,
+        opposite_score=confluence.short_score,
+    )
+    short_ok, short_detail = _confluence_side_ok(
+        hits=confluence.short_hits,
+        score=confluence.short_score,
+        opposite_score=confluence.long_score,
+    )
+    picked, pick_conf, _ = pick_direction(
+        confluence,
+        min_conditions=PRO_MIN_CONDITIONS,
+        min_confidence=PRO_MIN_CONFIDENCE,
+        min_gap=PRO_MIN_DIRECTION_GAP,
+    )
+    engine_signal = signal.get("signal", "WAIT")
+    engine_reason = signal.get("reasons", ["Unknown"])[0] if signal.get("reasons") else "Unknown"
+    pick_detail = (
+        f"selected={picked} confidence={pick_conf:.1f}"
+        if picked
+        else f"No side met thresholds (best {max(confluence.long_score, confluence.short_score):.1f})"
+    )
+
+    regime_ok, regime_detail = validate_regime_confirmations(
+        regime,
+        picked or diag.candidate_direction,
+        confluence.conditions,
+        trend=ctx.trend,
+        htf_trend=ctx.htf_trend,
+        bos=ctx.bos,
+        choch=ctx.choch,
+    )
+
+    ready = SignalEnginePro._ready(ctx.last)
+    engine_conf = float(signal.get("confidence", signal.get("confluence", 0)))
+    diag_conf = diag.confidence
+    confidence_detail = (
+        f"engine={engine_conf:.1f} diagnostic={diag_conf:.1f} grade={diag.grade} "
+        f"buy={float(signal.get('buy_confidence', 0)):.1f} "
+        f"sell={float(signal.get('sell_confidence', 0)):.1f}"
+    )
+    confidence_pass = engine_signal in ("BUY", "SELL") and engine_conf >= PRO_MIN_CONFIDENCE
+    if engine_signal == "WAIT" and diag_conf >= PRO_MIN_CONFIDENCE:
+        confidence_pass = False
+        confidence_detail += " (engine WAIT zeros confidence; diagnostic score shown)"
+
+    tele_detail = (
+        f"{diag.confidence:.1f} vs Telegram min {min_confidence:.0f}"
+        if engine_signal in ("BUY", "SELL")
+        else "N/A — engine WAIT"
+    )
+
+    return [
+        CheckResult(
+            "Indicators ready",
+            ready,
+            "All required indicators calculated"
+            if ready
+            else "One or more required indicators missing",
+        ),
+        CheckResult("Confluence BUY", long_ok, long_detail),
+        CheckResult("Confluence SELL", short_ok, short_detail),
+        CheckResult("Engine pick_direction", picked is not None, pick_detail),
+        CheckResult(
+            "Engine signal",
+            engine_signal in ("BUY", "SELL"),
+            f"signal={engine_signal} | {engine_reason}",
+        ),
+        CheckResult(
+            "Engine regime",
+            regime_ok,
+            regime_detail
+            + (" (engine stopped before this gate)" if engine_signal == "WAIT" else ""),
+        ),
+        CheckResult("Confidence threshold", confidence_pass, confidence_detail),
+        CheckResult("Risk", diag.risk_ok, diag.risk_detail),
+        CheckResult("Telegram gate", diag.would_alert, tele_detail),
+    ]
+
+
+def _build_engine_gate_checks_v2(
+    result: "AnalysisResult",
+    ctx: MarketContext,
+    diag: ScanDiagnostic,
+    *,
+    min_confidence: float,
+) -> list[CheckResult]:
+    signal = result.signal
+    direction = diag.candidate_direction
+    narrative = pick_best_narrative(ctx)
+    htf = evaluate_htf_bias(ctx)
+    confirmations = run_confirmations(ctx, direction)
+    regime_gates = run_regime_gates(ctx, direction)
+    sl = ctx.swing_lows[-1]["price"] if ctx.swing_lows else None
+    sh = ctx.swing_highs[-1]["price"] if ctx.swing_highs else None
+    risk = RiskManagerV2.calculate(ctx, direction, swing_low=sl, swing_high=sh)
+    rr = risk["rr"] if risk else 0
+    grade, confidence = assign_grade(narrative, confirmations, htf, rr)
+    grade_ok = grade_emits_signal(grade)
+    engine_signal = signal.get("signal", "WAIT")
+    engine_reason = signal.get("reasons", ["Unknown"])[0] if signal.get("reasons") else "Unknown"
+    conf_ok = all(c.aligned for c in confirmations)
+    conf_detail = "; ".join(
+        f"{c.name}={'PASS' if c.aligned else 'FAIL'} ({c.reason})" for c in confirmations
+    )
+    regime_ok = all(g.passed for g in regime_gates)
+    regime_detail = "; ".join(
+        f"{g.name}={'PASS' if g.passed else 'FAIL'} ({g.reason})" for g in regime_gates
+    )
+
+    return [
+        CheckResult(
+            "Narrative",
+            narrative.direction is not None,
+            narrative.summary or "No complete setup narrative",
+        ),
+        CheckResult("HTF bias gate", htf_allows(direction, htf), htf.reason),
+        CheckResult("Confirmations", conf_ok, conf_detail),
+        CheckResult("Regime gates", regime_ok, regime_detail),
+        CheckResult(
+            "Grade",
+            grade_ok,
+            f"grade={grade} confidence={confidence:.1f}",
+        ),
+        CheckResult(
+            "Engine signal",
+            engine_signal in ("BUY", "SELL"),
+            f"signal={engine_signal} | {engine_reason}",
+        ),
+        CheckResult("Risk", diag.risk_ok, diag.risk_detail),
+        CheckResult(
+            "Telegram gate",
+            diag.would_alert,
+            f"{diag.confidence:.1f} vs Telegram min {min_confidence:.0f}",
+        ),
+    ]
+
+
+def format_gate_audit_block(
+    result: "AnalysisResult",
+    diag: ScanDiagnostic,
+    *,
+    timeframe: str,
+    min_confidence: float | None = None,
+    htf_df: pd.DataFrame | None = None,
+) -> str:
+    """Format PASS/FAIL audit for every decision gate in the pipeline."""
+    min_confidence = min_confidence if min_confidence is not None else TELEGRAM_NOTIFY_MIN_CONFIDENCE
+    signal = result.signal
+    ctx = MarketContextBuilder.build(
+        result.df,
+        symbol=result.symbol,
+        interval=timeframe,
+        htf_df=htf_df,
+        indicators_calculated=True,
+    )
+
+    lines = [
+        f"=== Decision Gate Audit | {diag.symbol} | {diag.engine_version} | {timeframe}m ===",
+        (
+            f"Context | candidate={diag.candidate_direction} "
+            f"trend={ctx.trend} structure={diag.structure} "
+            f"regime={diag.regime or 'Unknown'} "
+            f"htf={ctx.htf_trend}"
+        ),
+        "--- Setup filters (candidate direction) ---",
+    ]
+
+    for check in diag.checks:
+        lines.append(f"GATE | {check.name} | {_pass_fail(check.passed)} | {check.detail}")
+
+    if diag.engine_version == "v1":
+        regime = ctx.regime or detect_regime_from_context(ctx)
+        profile = build_regime_profile(regime)
+        confluence = score_confluence(
+            last=ctx.last,
+            trend=ctx.trend,
+            bos=ctx.bos,
+            choch=ctx.choch,
+            liquidity=ctx.liquidity,
+            order_block=ctx.order_block,
+            fvg=ctx.fvg,
+            htf_trend=ctx.htf_trend,
+            structure=ctx.structure,
+            regime=regime,
+            profile=profile,
+        )
+        lines.append("--- Confluence factors ---")
+        for cond in confluence.conditions:
+            ok, detail = _confluence_condition_pass(cond, diag.candidate_direction)
+            lines.append(f"GATE | Confluence:{cond.name} | {_pass_fail(ok)} | {detail}")
+
+        engine_checks = _build_engine_gate_checks_v1(
+            result,
+            ctx,
+            diag,
+            min_confidence=min_confidence,
+        )
+    else:
+        engine_checks = _build_engine_gate_checks_v2(
+            result,
+            ctx,
+            diag,
+            min_confidence=min_confidence,
+        )
+
+    lines.append("--- Engine gates ---")
+    for check in engine_checks:
+        lines.append(f"GATE | {check.name} | {_pass_fail(check.passed)} | {check.detail}")
+
+    failed_names = [c.name for c in diag.checks if not c.passed]
+    failed_engine = [c.name for c in engine_checks if not c.passed]
+    primary = failed_names[:3] + failed_engine[:3]
+    engine_conf = float(signal.get("confidence", signal.get("confluence", 0)))
+    lines.extend([
+        "--- Summary ---",
+        f"Primary blockers: {', '.join(primary) if primary else 'none'}",
+        (
+            f"Engine reported: signal={signal.get('signal', 'WAIT')} "
+            f"confidence={engine_conf:.1f} "
+            f"(diagnostic confidence={diag.confidence:.1f} grade={diag.grade})"
+        ),
+        f"Final decision: {diag.final_decision} | rejection={diag.rejection_reason}",
+    ])
+    return "\n".join(lines)
+
+
+def log_decision_gate_audit(
+    audit_logger: logging.Logger,
+    result: "AnalysisResult",
+    diag: ScanDiagnostic,
+    *,
+    timeframe: str,
+    min_confidence: float | None = None,
+    htf_df: pd.DataFrame | None = None,
+) -> None:
+    """Emit structured PASS/FAIL lines for every pipeline decision gate."""
+    block = format_gate_audit_block(
+        result,
+        diag,
+        timeframe=timeframe,
+        min_confidence=min_confidence,
+        htf_df=htf_df,
+    )
+    for line in block.splitlines():
+        audit_logger.info(line)
 
 
 def summarize_diagnostics(diagnostics: list[ScanDiagnostic]) -> str:

@@ -29,7 +29,6 @@ from app.analysis.pro_v2.htf_bias import evaluate_htf_bias, htf_allows
 from app.analysis.pro_v2.regime_gate import check_adx_gate, check_atr_gate, run_regime_gates
 from app.analysis.pro_v2.risk_gate import check_risk_levels
 from app.analysis.pro_v2.setup_sequence import (
-    _poi_return,
     _structure_break,
     pick_best_narrative,
     validate_continuation,
@@ -118,39 +117,45 @@ def _liquidity_pass(ctx: MarketContext, direction: str) -> tuple[bool, str]:
     return False, f"Sweep type {liq.get('type')} not aligned for {direction}"
 
 
+def _regime_poi_tolerance(ctx: MarketContext) -> float:
+    regime = ctx.regime or detect_regime_from_context(ctx)
+    return build_regime_profile(regime).poi_tolerance_pct
+
+
+def _poi_proximity_label(pct: float) -> str:
+    return f"{pct * 100:.1f}%"
+
+
 def _order_block_pass(ctx: MarketContext, direction: str) -> tuple[bool, str]:
-    ok, reason = _poi_return(ctx, direction)
+    poi_tol = _regime_poi_tolerance(ctx)
+    prox = _poi_proximity_label(poi_tol)
     ob = ctx.order_block
     if ob:
         if direction == "BUY" and ob.get("bullish"):
             b = ob["bullish"]
-            if near_bullish_poi(ctx.price, b["low"], b["high"]):
+            if near_bullish_poi(ctx.price, b["low"], b["high"], pct=poi_tol):
                 return True, f"Bullish OB {b['low']:.2f}–{b['high']:.2f}"
         if direction == "SELL" and ob.get("bearish"):
             b = ob["bearish"]
-            if near_bearish_poi(ctx.price, b["low"], b["high"]):
+            if near_bearish_poi(ctx.price, b["low"], b["high"], pct=poi_tol):
                 return True, f"Bearish OB {b['low']:.2f}–{b['high']:.2f}"
-    if ok and "OB" in reason:
-        return True, reason
     if ob:
-        return False, "Order block present but price outside 0.3% proximity"
-    return False, reason if not ok else "No aligned order block"
+        return False, f"Order block present but price outside {prox} proximity"
+    return False, "No aligned order block"
 
 
 def _fvg_pass(ctx: MarketContext, direction: str) -> tuple[bool, str]:
-    ok, reason = _poi_return(ctx, direction)
+    poi_tol = _regime_poi_tolerance(ctx)
+    prox = _poi_proximity_label(poi_tol)
     fvg = ctx.fvg
     if fvg:
         if direction == "BUY" and fvg.get("type") == "BULLISH":
-            if near_bullish_poi(ctx.price, fvg["bottom"], fvg["top"]):
+            if near_bullish_poi(ctx.price, fvg["bottom"], fvg["top"], pct=poi_tol):
                 return True, f"Bullish FVG {fvg['bottom']:.2f}–{fvg['top']:.2f}"
         if direction == "SELL" and fvg.get("type") == "BEARISH":
-            if near_bearish_poi(ctx.price, fvg["bottom"], fvg["top"]):
+            if near_bearish_poi(ctx.price, fvg["bottom"], fvg["top"], pct=poi_tol):
                 return True, f"Bearish FVG {fvg['bottom']:.2f}–{fvg['top']:.2f}"
-    if ok and "FVG" in reason:
-        return True, reason
-    if fvg:
-        return False, f"Active {fvg.get('type', 'unknown')} FVG outside 0.3% proximity"
+        return False, f"Active {fvg.get('type', 'unknown')} FVG outside {prox} proximity"
     return False, "No active FVG"
 
 

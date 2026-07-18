@@ -11,7 +11,7 @@ Group=root
 WorkingDirectory=/opt/ai-trading-system
 Environment=PYTHONPATH=/opt/ai-trading-system
 EnvironmentFile=-/opt/ai-trading-system/.env
-ExecStart=/opt/ai-trading-system/venv/bin/python -m app.services.signal_service
+ExecStart=/opt/ai-trading-system/scripts/run_signal_service_prod.sh
 Restart=always
 RestartSec=15
 TimeoutStopSec=30

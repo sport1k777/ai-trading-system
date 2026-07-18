@@ -4,6 +4,7 @@ import pandas as pd
 from pybit.unified_trading import HTTP
 
 from app.config import BYBIT_API_KEY, BYBIT_API_SECRET, TESTNET
+from app.utils.ssl_ca import ensure_ca_bundle
 
 logger = logging.getLogger(__name__)
 
@@ -12,6 +13,7 @@ class BybitClient:
     """Single shared Bybit HTTP session for all exchange interactions."""
 
     def __init__(self):
+        ensure_ca_bundle()
         self.session = HTTP(
             testnet=TESTNET,
             api_key=BYBIT_API_KEY,
@@ -74,11 +76,19 @@ class BybitClient:
             unit="ms",
         )
 
-        return df.sort_values("timestamp").reset_index(drop=True)
+        df = df.sort_values("timestamp").reset_index(drop=True)
+        logger.info(
+            "Bybit kline OK | GET /v5/market/kline | symbol=%s interval=%s rows=%d",
+            symbol,
+            interval,
+            len(df),
+        )
+        return df
 
     def reconnect(self) -> None:
         """Create a fresh HTTP session after connectivity failures."""
         logger.warning("Resetting Bybit HTTP session")
+        ensure_ca_bundle()
         self.session = HTTP(
             testnet=TESTNET,
             api_key=BYBIT_API_KEY,

@@ -187,7 +187,8 @@ install_system_packages() {
   if command -v apt-get >/dev/null 2>&1; then
     export DEBIAN_FRONTEND=noninteractive
     run apt-get update -qq
-    run apt-get install -y -qq git python3 python3-venv python3-pip
+    run apt-get install -y -qq git python3 python3-venv python3-pip ca-certificates
+    update-ca-certificates || true
   elif command -v dnf >/dev/null 2>&1; then
     run dnf install -y git python3 python3-pip
   elif command -v yum >/dev/null 2>&1; then

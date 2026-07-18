@@ -25,8 +25,15 @@ from app.telegram.formatter import format_live_signal_message
 from app.telegram.notifier import TelegramNotifier
 from app.telegram.signal_store import SentSignalRecord, SignalStore
 from app.utils.logging_config import setup_logging
+from app.utils.ssl_ca import ensure_ca_bundle
 
 logger = logging.getLogger(__name__)
+
+
+def _trace(stage: str, **fields) -> None:
+    """Temporary production trace — remove after pipeline stall is confirmed fixed."""
+    detail = " ".join(f"{key}={value}" for key, value in fields.items())
+    logger.info("TRACE %s%s", stage, f" | {detail}" if detail else "")
 
 
 class SignalService:
@@ -81,28 +88,70 @@ class SignalService:
             return None
 
     def _log_scan_diagnostic(self, result, *, htf_df=None) -> None:
+        _trace("diagnostic.start", symbol=result.symbol)
         diag = diagnose_scan(
             result,
             timeframe=self.interval,
             min_confidence=self.min_confidence,
             htf_df=htf_df,
         )
+        status = "ACCEPTED" if diag.would_alert else "REJECTED"
+        _trace(
+            "diagnostic.done",
+            symbol=diag.symbol,
+            status=status,
+            confidence=f"{diag.confidence:.1f}",
+            engine_signal=diag.engine_signal,
+            final_decision=diag.final_decision,
+        )
+        logger.info(
+            "Scan decision | symbol=%s confidence=%.1f status=%s reason=%s",
+            diag.symbol,
+            diag.confidence,
+            status,
+            diag.rejection_reason,
+        )
         logger.info("Scan diagnostic\n%s", format_diagnostic_block(diag))
 
     def _process_symbol(self, symbol: str) -> bool:
         """Analyze one symbol and send Telegram alert when eligible. Returns True on success."""
+        _trace("process_symbol.start", symbol=symbol)
         htf_df = self._fetch_htf_df(symbol)
+        _trace(
+            "process_symbol.htf",
+            symbol=symbol,
+            fetched=htf_df is not None,
+        )
+        _trace("process_symbol.analyze_call", symbol=symbol)
         result = self.pipeline.analyze(symbol=symbol, interval=self.interval)
+        _trace(
+            "process_symbol.analyze_returned",
+            symbol=symbol,
+            engine_signal=result.signal.get("signal"),
+            confidence=result.signal.get("confidence", result.signal.get("confluence", 0)),
+        )
         self._log_scan_diagnostic(result, htf_df=htf_df)
 
         signal = result.signal
         direction = signal.get("signal")
 
         if direction not in ("BUY", "SELL"):
+            _trace(
+                "process_symbol.no_actionable_signal",
+                symbol=symbol,
+                direction=direction,
+            )
             return True
 
         confidence = float(signal.get("confidence", signal.get("confluence", 0)))
         if confidence < self.min_confidence:
+            _trace(
+                "process_symbol.telegram_blocked_confidence",
+                symbol=symbol,
+                direction=direction,
+                confidence=f"{confidence:.1f}",
+                min_confidence=f"{self.min_confidence:.1f}",
+            )
             logger.info(
                 "%s: Telegram gate — confidence %.1f below threshold %.1f",
                 symbol,
@@ -126,6 +175,12 @@ class SignalService:
 
         risk = result.risk
         if not risk:
+            _trace(
+                "process_symbol.telegram_blocked_no_risk",
+                symbol=symbol,
+                direction=direction,
+                confidence=f"{confidence:.1f}",
+            )
             logger.warning("%s: high-confidence %s but no risk levels", symbol, direction)
             return True
 
@@ -140,6 +195,12 @@ class SignalService:
         grade = signal.get("grade", "n/a")
 
         if self.store.is_duplicate(record):
+            _trace(
+                "process_symbol.telegram_blocked_duplicate",
+                symbol=symbol,
+                direction=direction,
+                entry=f"{record.entry:.4f}",
+            )
             logger.info(
                 "%s: duplicate setup suppressed (%s @ %.4f)",
                 symbol,
@@ -154,13 +215,26 @@ class SignalService:
             min_confidence=self.min_confidence,
         )
         if not message:
+            _trace(
+                "process_symbol.telegram_blocked_formatter",
+                symbol=symbol,
+                direction=direction,
+            )
             return True
 
+        _trace("process_symbol.telegram_send", symbol=symbol, direction=direction)
         if not self.notifier.send_message(message):
             logger.error("%s: failed to send Telegram alert", symbol)
             return False
 
         self.store.record(record)
+        _trace(
+            "process_symbol.telegram_sent",
+            symbol=symbol,
+            direction=direction,
+            grade=grade,
+            confidence=f"{confidence:.1f}",
+        )
         logger.info(
             "%s: Telegram alert sent (%s, grade=%s, confidence=%.1f)",
             symbol,
@@ -172,14 +246,24 @@ class SignalService:
 
     def run_cycle(self) -> int:
         """Run one full scan across all symbols. Returns number of symbol-level failures."""
+        _trace("run_cycle.start", symbols=len(self.symbols))
         failures = 0
         for symbol in self.symbols:
             try:
-                if not self._process_symbol(symbol):
+                ok = self._process_symbol(symbol)
+                if not ok:
                     failures += 1
+                _trace(
+                    "run_cycle.symbol_done",
+                    symbol=symbol,
+                    ok=ok,
+                    failures=failures,
+                )
             except Exception:
                 failures += 1
+                _trace("run_cycle.symbol_failed", symbol=symbol, failures=failures)
                 logger.exception("Unhandled error while scanning %s", symbol)
+        _trace("run_cycle.done", failures=failures, symbols=len(self.symbols))
         return failures
 
     def _sleep_until_next_cycle(self, cycle_started: float) -> None:
@@ -239,7 +323,9 @@ class SignalService:
 
         while self._running:
             cycle_started = time.monotonic()
+            _trace("run_forever.cycle_start")
             failures = self.run_cycle()
+            _trace("run_forever.cycle_end", failures=failures)
             self._handle_cycle_failures(failures)
             if self._running:
                 self._sleep_until_next_cycle(cycle_started)
@@ -262,6 +348,7 @@ def _handle_shutdown(signum, _frame) -> None:
 def main() -> None:
     global _service
     setup_logging("app.services.signal_service")
+    ensure_ca_bundle()
     _service = SignalService()
 
     signal.signal(signal.SIGINT, _handle_shutdown)

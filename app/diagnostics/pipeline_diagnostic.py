@@ -191,12 +191,14 @@ def _htf_pass_v2(ctx: MarketContext, direction: str) -> tuple[bool, str]:
 
 
 def _htf_pass_v1(ctx: MarketContext, direction: str) -> tuple[bool, str]:
-    trend = ctx.trend
+    htf = ctx.htf_trend
     if direction == "BUY":
-        ok = trend == "BULLISH"
-        return ok, f"LTF trend {trend}" + ("" if ok else " — no bullish HTF proxy")
-    ok = trend == "BEARISH"
-    return ok, f"LTF trend {trend}" + ("" if ok else " — no bearish HTF proxy")
+        ok = htf == "BULLISH" or (htf == "SIDEWAYS" and ctx.trend == "BULLISH")
+        detail = f"HTF {htf}, LTF {ctx.trend}"
+        return ok, detail + ("" if ok else " — no bullish HTF alignment")
+    ok = htf == "BEARISH" or (htf == "SIDEWAYS" and ctx.trend == "BEARISH")
+    detail = f"HTF {htf}, LTF {ctx.trend}"
+    return ok, detail + ("" if ok else " — no bearish HTF alignment")
 
 
 def _candidate_direction_v1(signal: dict) -> str:
@@ -238,6 +240,7 @@ def _build_checks_v1(ctx: MarketContext, direction: str) -> list[CheckResult]:
         order_block=ctx.order_block,
         fvg=ctx.fvg,
         htf_trend=ctx.htf_trend,
+        structure=ctx.structure,
         regime=regime,
     )
     regime_ok, regime_detail = validate_regime_confirmations(
@@ -306,6 +309,7 @@ def _v1_confidence(ctx: MarketContext, direction: str) -> tuple[float, str]:
         order_block=ctx.order_block,
         fvg=ctx.fvg,
         htf_trend=ctx.htf_trend,
+        structure=ctx.structure,
         regime=regime,
     )
     picked, confidence, _ = pick_direction(
@@ -547,6 +551,24 @@ def format_diagnostic_block(diag: ScanDiagnostic) -> str:
         lines.append(f"Rejection reason: {diag.rejection_reason}")
 
     return "\n".join(lines)
+
+
+def diagnose_scan_block(
+    result: "AnalysisResult",
+    *,
+    timeframe: str,
+    min_confidence: float | None = None,
+    htf_df: pd.DataFrame | None = None,
+) -> str:
+    """Run diagnostics for one scan and return the formatted log block."""
+    return format_diagnostic_block(
+        diagnose_scan(
+            result,
+            timeframe=timeframe,
+            min_confidence=min_confidence,
+            htf_df=htf_df,
+        )
+    )
 
 
 def summarize_diagnostics(diagnostics: list[ScanDiagnostic]) -> str:

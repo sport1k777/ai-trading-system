@@ -4,7 +4,11 @@ from __future__ import annotations
 
 import pandas as pd
 
-from app.diagnostics.pipeline_diagnostic import diagnose_scan, format_diagnostic_block
+from app.diagnostics.pipeline_diagnostic import (
+    diagnose_scan,
+    diagnose_scan_block,
+    format_diagnostic_block,
+)
 
 
 def _make_result(*, symbol="BTCUSDT", signal="WAIT", confidence=0, reasons=None):
@@ -77,3 +81,10 @@ def test_diagnostic_detects_telegram_gate():
 
     assert diag.telegram_blocked is True
     assert "Telegram confidence gate" in diag.rejection_reason
+
+
+def test_diagnose_scan_block_import_and_format():
+    result = _make_result(signal="WAIT", confidence=0)
+    block = diagnose_scan_block(result, timeframe="15", min_confidence=70)
+    assert "BTCUSDT" in block
+    assert "Rejected because" in block

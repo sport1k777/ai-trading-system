@@ -46,7 +46,7 @@ def test_format_signal_message_escapes_confidence_pct():
             "setup_type": "pro_signal",
             "reasons": ["Bullish BOS + sell-side liquidity sweep at POI"],
         }
-        risk = {"entry": 76.6, "stop": 73.0, "tp1": 84.6, "tp2": 84.6, "tp3": 84.6, "rr": 2.2}
+        risk = {"entry": 76.6, "stop": 73.0, "tp1": 80.6, "tp2": 84.6, "tp3": 88.6, "rr": 2.2}
 
     r = Result()
     msg = _format_premium_signal(r, min_confidence=80)
@@ -54,6 +54,9 @@ def test_format_signal_message_escapes_confidence_pct():
     assert "81\\.2%" in msg
     assert "*Reason*" in msg
     assert "Bullish BOS" in msg
+    assert "`80.6000`" in msg
+    assert "`84.6000`" in msg
+    assert "`88.6000`" in msg
     msg = format_service_startup_message(
         symbol_count=5,
         scan_interval_seconds=60,

@@ -47,7 +47,8 @@ class RiskManagerV2:
         tp1, tp2, tp3 = map_take_profits(
             ctx, direction, levels["entry"], levels["stop"], levels["tp1"],
         )
-        rr = round(abs(tp1 - levels["entry"]) / risk_dist, 2) if risk_dist else 0
+        # RR gate uses the primary RR target from RiskManager, not the nearest ladder step.
+        rr = levels["rr"]
 
         return {
             "entry": levels["entry"],

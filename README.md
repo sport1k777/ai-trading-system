@@ -98,6 +98,9 @@ ssh root@YOUR_VPS 'sudo bash /opt/ai-trading-system/scripts/deploy/update.sh'
 
 Legacy laptop rsync deploy: `scripts/deploy/contabo_deploy.sh`
 
+Pre-deploy check: `python scripts/validate_production.py`  
+Full audit: **[docs/PRODUCTION_READINESS.md](docs/PRODUCTION_READINESS.md)**
+
 ## Disclaimer
 
 This is a signal analysis and backtesting tool. It does **not** place live orders.

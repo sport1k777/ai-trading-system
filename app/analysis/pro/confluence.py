@@ -24,6 +24,7 @@ def score_confluence(
     fvg: dict | None,
     weights: dict[str, float] | None = None,
     htf_trend: str = "SIDEWAYS",
+    structure: str = "RANGE",
     regime: Optional[MarketRegime] = None,
     profile: Optional[RegimeProfile] = None,
 ) -> ConfluenceScore:
@@ -44,6 +45,7 @@ def score_confluence(
         fvg=fvg,
         weights=active_weights,
         htf_trend=htf_trend,
+        structure=structure,
         poi_tolerance_pct=poi_tol,
         atr_min=atr_min,
         atr_max=atr_max,

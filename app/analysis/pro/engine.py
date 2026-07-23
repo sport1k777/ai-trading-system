@@ -137,6 +137,7 @@ class SignalEnginePro:
             order_block=order_block,
             fvg=fvg,
             htf_trend=htf_trend,
+            structure=structure,
             regime=regime,
             profile=profile,
         )

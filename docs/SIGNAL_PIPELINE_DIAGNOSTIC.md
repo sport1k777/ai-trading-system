@@ -8,115 +8,125 @@
 
 ## Failure Frequency (checks that failed)
 
-- **Order Block**: 4/5 scans (80%)
-- **FVG**: 4/5 scans (80%)
-- **BOS**: 3/5 scans (60%)
-- **CHOCH**: 3/5 scans (60%)
-- **RSI**: 3/5 scans (60%)
+- **BOS**: 4/5 scans (80%)
+- **CHOCH**: 4/5 scans (80%)
+- **FVG**: 3/5 scans (60%)
+- **Regime**: 3/5 scans (60%)
+- **EMA**: 3/5 scans (60%)
 - **HTF**: 2/5 scans (40%)
-- **EMA**: 2/5 scans (40%)
-- **ADX**: 2/5 scans (40%)
-- **ATR**: 1/5 scans (20%)
+- **Order Block**: 1/5 scans (20%)
+- **RSI**: 1/5 scans (20%)
+- **Liquidity**: 1/5 scans (20%)
+- **ADX**: 1/5 scans (20%)
 
 ## Per-Symbol Results
 
 ```
 BTCUSDT
-HTF bias: PASS (LTF trend BEARISH)
+Market regime: Strong Trend
+HTF bias: PASS (HTF BEARISH, LTF BEARISH)
 Market structure: DOWNTREND
 BOS: FAIL (No bearish BOS (NO_BOS))
-CHOCH: FAIL (No bearish CHOCH (NO_CHOCH))
-Liquidity sweep: PASS (Price below buy-side pool 64409.38)
+CHOCH: PASS (BEARISH_CHOCH)
+Liquidity sweep: PASS (Buy-side sweep at 67136.75)
 Order Block: FAIL (Order block present but price outside 0.3% proximity)
 FVG: FAIL (Active BEARISH FVG outside 0.3% proximity)
 EMA filter: PASS (Bearish EMA trend)
-ADX: PASS (ADX 62.4 (min 24))
-ATR: PASS (Tradeable volatility (0.19% ATR))
-RSI: PASS (RSI 35.1)
-Confidence score: 22.0
+ADX: PASS (ADX 53.1 (min 24))
+ATR: PASS (Tradeable volatility (0.45% ATR))
+RSI: FAIL (RSI 11.6 outside bearish zone 32–55)
+Regime gate: FAIL (Strong Trend requires BOS)
+Confidence score: 46.0
 Final decision: WAIT
-Rejection reason: Rejected because BOS failed | Engine: Confluence insufficient (best score 22.0, need 5 factors and 65 confidence) | Failed: BOS, CHOCH, Order Block, FVG
+Rejection reason: Rejected because BOS failed | Engine: Confluence insufficient (best score 46.0, need 5 factors and 65 confidence) | Failed: BOS, Order Block, FVG, RSI
 ```
 
 ```
 ETHUSDT
-HTF bias: PASS (LTF trend BULLISH)
-Market structure: UPTREND
-BOS: PASS (BULLISH_BOS)
-CHOCH: PASS (BULLISH_CHOCH)
-Liquidity sweep: PASS (Price above sell-side pool 1784.89)
-Order Block: FAIL (Order block present but price outside 0.3% proximity)
-FVG: FAIL (Active BULLISH FVG outside 0.3% proximity)
-EMA filter: PASS (Bullish EMA trend)
-ADX: PASS (ADX 72.3 (min 24))
-ATR: PASS (Tradeable volatility (0.57% ATR))
-RSI: FAIL (RSI 89.0 outside bullish zone 45–68)
-Confidence score: 39.0
+Market regime: Weak Trend + Low Volatility
+HTF bias: FAIL (HTF BULLISH, LTF BEARISH — no bearish HTF alignment)
+Market structure: DOWNTREND
+BOS: FAIL (No bearish BOS (NO_BOS))
+CHOCH: FAIL (No bearish CHOCH (NO_CHOCH))
+Liquidity sweep: PASS (Buy-side sweep at 1921.88)
+Order Block: PASS (Bearish OB 1924.15–1924.93)
+FVG: PASS (Bearish FVG 1923.19–1923.94)
+EMA filter: FAIL (Trend=BEARISH, close vs EMA50 misaligned)
+ADX: PASS (ADX 26.1 (min 24))
+ATR: PASS (Tradeable volatility (0.15% ATR))
+RSI: PASS (RSI 47.8)
+Regime gate: FAIL (Weak Trend requires BOS or CHOCH)
+Confidence score: 29.5
 Final decision: WAIT
-Rejection reason: Rejected because Order Block failed | Engine: Confluence insufficient (best score 39.0, need 5 factors and 65 confidence) | Failed: Order Block, FVG, RSI
+Rejection reason: Rejected because HTF failed | Engine: Confluence insufficient (best score 29.5, need 5 factors and 65 confidence) | Failed: HTF, BOS, CHOCH, EMA
 ```
 
 ```
 SOLUSDT
-HTF bias: FAIL (LTF trend BEARISH — no bullish HTF proxy)
-Market structure: DOWNTREND
-BOS: FAIL (No bullish BOS (BEARISH_BOS))
-CHOCH: FAIL (No bullish CHOCH (BEARISH_CHOCH))
-Liquidity sweep: PASS (Price above sell-side pool 77.61)
-Order Block: FAIL (Order block present but price outside 0.3% proximity)
-FVG: FAIL (Active BEARISH FVG outside 0.3% proximity)
-EMA filter: FAIL (Trend=BEARISH, close vs EMA50 misaligned)
-ADX: PASS (ADX 94.4 (min 24))
-ATR: FAIL (Volatility out of tradeable range (5.99% ATR))
-RSI: FAIL (RSI 35.6 outside bullish zone 45–68)
-Confidence score: 0.0
+Market regime: Weak Trend + High Volatility
+HTF bias: FAIL (HTF BEARISH, LTF SIDEWAYS — no bullish HTF alignment)
+Market structure: RANGE
+BOS: FAIL (No bullish BOS (NO_BOS))
+CHOCH: FAIL (No bullish CHOCH (NO_CHOCH))
+Liquidity sweep: PASS (Sell-side sweep at 76.99)
+Order Block: PASS (Bullish OB 76.90–77.05)
+FVG: FAIL (No active FVG)
+EMA filter: FAIL (Trend=SIDEWAYS, close vs EMA50 misaligned)
+ADX: PASS (ADX 79.3 (min 24))
+ATR: PASS (Tradeable volatility (6.65% ATR))
+RSI: PASS (RSI 52.6)
+Regime gate: FAIL (Weak Trend requires BOS or CHOCH)
+Confidence score: 29.5
 Final decision: WAIT
-Rejection reason: Rejected because HTF failed | Engine: Volatility out of tradeable range (5.99% ATR) | Failed: HTF, BOS, CHOCH, Order Block
+Rejection reason: Rejected because HTF failed | Engine: Confluence insufficient (best score 29.5, need 5 factors and 65 confidence) | Failed: HTF, BOS, CHOCH, FVG
 ```
 
 ```
 XRPUSDT
-HTF bias: FAIL (LTF trend SIDEWAYS — no bearish HTF proxy)
+Market regime: Weak Trend
+HTF bias: PASS (HTF BULLISH, LTF SIDEWAYS)
 Market structure: RANGE
-BOS: PASS (BEARISH_BOS)
-CHOCH: PASS (BEARISH_CHOCH)
-Liquidity sweep: PASS (Buy-side sweep at 1.16)
-Order Block: FAIL (Order block present but price outside 0.3% proximity)
+BOS: PASS (BULLISH_BOS)
+CHOCH: FAIL (No bullish CHOCH (NO_CHOCH))
+Liquidity sweep: FAIL (Sweep type BUY_SIDE_SWEEP not aligned for BUY)
+Order Block: PASS (Bullish OB 1.11–1.12)
 FVG: FAIL (No active FVG)
 EMA filter: FAIL (Trend=SIDEWAYS, close vs EMA50 misaligned)
-ADX: FAIL (ADX 20.2 (min 24))
-ATR: PASS (Tradeable volatility (1.94% ATR))
-RSI: FAIL (RSI 56.6 outside bearish zone 32–55)
-Confidence score: 30.0
+ADX: PASS (ADX 27.3 (min 24))
+ATR: PASS (Tradeable volatility (1.44% ATR))
+RSI: PASS (RSI 48.4)
+Regime gate: PASS (Weak Trend confirmations satisfied)
+Confidence score: 35.1
 Final decision: WAIT
-Rejection reason: Rejected because HTF failed | Engine: Confluence insufficient (best score 30.0, need 5 factors and 65 confidence) | Failed: HTF, Order Block, FVG, EMA
+Rejection reason: Rejected because CHOCH failed | Engine: Confluence insufficient (best score 35.1, need 5 factors and 65 confidence) | Failed: CHOCH, Liquidity, FVG, EMA
 ```
 
 ```
 DOGEUSDT
-HTF bias: PASS (LTF trend BULLISH)
-Market structure: UPTREND
-BOS: FAIL (No bullish BOS (NO_BOS))
-CHOCH: FAIL (No bullish CHOCH (NO_CHOCH))
-Liquidity sweep: PASS (Price above sell-side pool 0.07)
-Order Block: PASS (Bullish OB 0.07–0.07)
-FVG: PASS (Bullish FVG 0.07–0.07)
-EMA filter: PASS (Bullish EMA trend)
-ADX: FAIL (ADX 11.5 (min 24))
-ATR: PASS (Tradeable volatility (0.36% ATR))
-RSI: PASS (RSI 48.9)
-Confidence score: 46.0
+Market regime: Range + Low Volatility
+HTF bias: PASS (HTF SIDEWAYS, LTF BEARISH)
+Market structure: DOWNTREND
+BOS: FAIL (No bearish BOS (NO_BOS))
+CHOCH: FAIL (No bearish CHOCH (NO_CHOCH))
+Liquidity sweep: PASS (Buy-side sweep at 0.07)
+Order Block: PASS (Bearish OB 0.07–0.07)
+FVG: PASS (Bearish FVG 0.07–0.07)
+EMA filter: PASS (Bearish EMA trend)
+ADX: FAIL (ADX 11.1 (min 24))
+ATR: PASS (Tradeable volatility (0.25% ATR))
+RSI: PASS (RSI 49.8)
+Regime gate: PASS (Range confirmations satisfied (ADX not required in low volatility))
+Confidence score: 46.8
 Final decision: WAIT
-Rejection reason: Rejected because BOS failed | Engine: Confluence insufficient (best score 46.0, need 5 factors and 65 confidence) | Failed: BOS, CHOCH, ADX
+Rejection reason: Rejected because BOS failed | Engine: Confluence insufficient (best score 46.8, need 5 factors and 65 confidence) | Failed: BOS, CHOCH, ADX
 ```
 
 
 ## Analysis
 
-Primary blocker across scans: **Order Block** failed in 4/5 scans (80%).
+Primary blocker across scans: **BOS** failed in 4/5 scans (80%).
 PRO v1 requires **5** aligned conditions, **65** confidence, and **10** direction gap — all must pass simultaneously.
-Price must be **within 0.3%** of an active FVG or order block zone. Wider proximity helps, but confluence may still fall short of 5 factors.
-Best candidate confidence this scan: **46.0**. Engine threshold is 65; Telegram requires 90.
+Best candidate confidence this scan: **46.8**. Engine threshold is 65; Telegram requires 80.
 
 ### Recommended fixes (do not lower confidence blindly)
 

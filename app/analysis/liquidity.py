@@ -1,4 +1,11 @@
+from __future__ import annotations
+
 import pandas as pd
+
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from app.analysis.market_context import MarketContext
 
 
 class LiquidityAnalyzer:
@@ -28,6 +35,7 @@ class LiquidityAnalyzer:
                 "type": "BUY_SIDE_SWEEP",
                 "level": float(recent_high),
                 "price": float(last_high),
+                "source": "bar_sweep",
             }
 
         # Sell Side Liquidity Sweep
@@ -39,8 +47,40 @@ class LiquidityAnalyzer:
                 "type": "SELL_SIDE_SWEEP",
                 "level": float(recent_low),
                 "price": float(last_low),
+                "source": "bar_sweep",
             }
 
+        return None
+
+    @staticmethod
+    def resolve(ctx: MarketContext) -> dict | None:
+        """Bar sweep first, then pool proximity (same rules as diagnostic/regime gates)."""
+        bar_sweep = LiquidityAnalyzer.analyze(ctx.view)
+        if bar_sweep:
+            return bar_sweep
+
+        from app.analysis.pro_v2.liquidity_pools import detect_liquidity_pools
+
+        pools = detect_liquidity_pools(ctx)
+        price = ctx.price
+        if pools["buy_side_pools"]:
+            level = max(pools["buy_side_pools"])
+            if price < level:
+                return {
+                    "type": "BUY_SIDE_SWEEP",
+                    "level": float(level),
+                    "price": float(price),
+                    "source": "pool_proximity",
+                }
+        if pools["sell_side_pools"]:
+            level = min(pools["sell_side_pools"])
+            if price > level:
+                return {
+                    "type": "SELL_SIDE_SWEEP",
+                    "level": float(level),
+                    "price": float(price),
+                    "source": "pool_proximity",
+                }
         return None
 
 

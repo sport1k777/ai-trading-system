@@ -163,11 +163,17 @@ def evaluate_liquidity(liquidity: dict | None, *, weight: float) -> ConditionRes
     )
 
 
-def evaluate_ema_trend(trend: str, last: pd.Series, *, weight: float) -> ConditionResult:
+def evaluate_ema_trend(trend: str, last: pd.Series, *, weight: float, structure: str = "RANGE") -> ConditionResult:
     close = float(last["close"])
     ema50 = float(last["ema50"])
+    effective = trend
+    if trend == "SIDEWAYS":
+        if structure == "UPTREND":
+            effective = "BULLISH"
+        elif structure == "DOWNTREND":
+            effective = "BEARISH"
 
-    if trend == "BULLISH" and close > ema50:
+    if effective == "BULLISH" and close > ema50:
         return ConditionResult(
             "EMA Trend",
             "LONG",
@@ -175,7 +181,7 @@ def evaluate_ema_trend(trend: str, last: pd.Series, *, weight: float) -> Conditi
             weight,
             "Bullish EMA stack with price above EMA50",
         )
-    if trend == "BEARISH" and close < ema50:
+    if effective == "BEARISH" and close < ema50:
         return ConditionResult(
             "EMA Trend",
             "SHORT",
@@ -253,16 +259,22 @@ def evaluate_volume(last: pd.Series, *, weight: float) -> ConditionResult:
     )
 
 
-def evaluate_adx(last: pd.Series, trend: str, *, weight: float) -> ConditionResult:
+def evaluate_adx(last: pd.Series, trend: str, *, weight: float, structure: str = "RANGE") -> ConditionResult:
     from app.config import MIN_ADX
 
     adx = float(last.get("adx", 0))
     if pd.isna(adx):
         return ConditionResult("ADX Trend", "NEUTRAL", False, weight, "ADX unavailable")
+    effective = trend
+    if trend == "SIDEWAYS":
+        if structure == "UPTREND":
+            effective = "BULLISH"
+        elif structure == "DOWNTREND":
+            effective = "BEARISH"
     if adx >= MIN_ADX:
-        if trend == "BULLISH":
+        if effective == "BULLISH":
             direction: str = "LONG"
-        elif trend == "BEARISH":
+        elif effective == "BEARISH":
             direction = "SHORT"
         else:
             direction = "NEUTRAL"
@@ -327,6 +339,7 @@ def evaluate_all(
     fvg: dict | None,
     weights: dict[str, float],
     htf_trend: str = "SIDEWAYS",
+    structure: str = "RANGE",
     poi_tolerance_pct: float | None = None,
     atr_min: float = 0.15,
     atr_max: float = 5.0,
@@ -352,8 +365,8 @@ def evaluate_all(
             order_block, price, weight=weights["order_block"], poi_tolerance_pct=poi_tolerance_pct
         ),
         evaluate_liquidity(liquidity, weight=weights["liquidity"]),
-        evaluate_ema_trend(trend, last, weight=weights["ema_trend"]),
-        evaluate_adx(last, trend, weight=weights.get("adx", weights["ema_trend"] * 0.8)),
+        evaluate_ema_trend(trend, last, weight=weights["ema_trend"], structure=structure),
+        evaluate_adx(last, trend, weight=weights.get("adx", weights["ema_trend"] * 0.8), structure=structure),
         evaluate_htf_alignment(htf_trend, trend, weight=weights.get("htf", weights["ema_trend"])),
         evaluate_rsi(last, weight=weights["rsi"]),
         evaluate_volume(last, weight=weights["volume"]),

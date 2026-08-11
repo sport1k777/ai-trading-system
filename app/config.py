@@ -130,6 +130,64 @@ SIGNAL_SERVICE_RECONNECT_AFTER_ERRORS = int(
     os.getenv("SIGNAL_SERVICE_RECONNECT_AFTER_ERRORS", "3")
 )
 
+# --- Multi-source intelligence (signal research only — read-only providers) ---
+INTELLIGENCE_ENABLED = os.getenv("INTELLIGENCE_ENABLED", "true").lower() in ("1", "true", "yes")
+INTELLIGENCE_CACHE_SECONDS = int(os.getenv("INTELLIGENCE_CACHE_SECONDS", "300"))
+INTELLIGENCE_BYBIT_MARKET_ENABLED = os.getenv(
+    "INTELLIGENCE_BYBIT_MARKET_ENABLED", "true"
+).lower() in ("1", "true", "yes")
+INTELLIGENCE_NEWS_ENABLED = os.getenv("INTELLIGENCE_NEWS_ENABLED", "true").lower() in (
+    "1",
+    "true",
+    "yes",
+)
+INTELLIGENCE_NEWS_RSS_URLS = [
+    u.strip()
+    for u in os.getenv(
+        "INTELLIGENCE_NEWS_RSS_URLS",
+        "https://www.coindesk.com/arc/outboundfeeds/rss/,"
+        "https://cointelegraph.com/rss",
+    ).split(",")
+    if u.strip()
+]
+INTELLIGENCE_SOCIAL_ENABLED = os.getenv("INTELLIGENCE_SOCIAL_ENABLED", "true").lower() in (
+    "1",
+    "true",
+    "yes",
+)
+TWITTER_BEARER_TOKEN = os.getenv("TWITTER_BEARER_TOKEN", "")
+INTELLIGENCE_ONCHAIN_ENABLED = os.getenv("INTELLIGENCE_ONCHAIN_ENABLED", "true").lower() in (
+    "1",
+    "true",
+    "yes",
+)
+ONCHAIN_API_KEY = os.getenv("ONCHAIN_API_KEY", "")
+INTELLIGENCE_FUNDAMENTAL_ENABLED = os.getenv(
+    "INTELLIGENCE_FUNDAMENTAL_ENABLED", "true"
+).lower() in ("1", "true", "yes")
+INTELLIGENCE_FRESHNESS_HALF_LIFE_MINUTES = float(
+    os.getenv("INTELLIGENCE_FRESHNESS_HALF_LIFE_MINUTES", "120")
+)
+INTELLIGENCE_MAX_NEWS_AGE_HOURS = float(os.getenv("INTELLIGENCE_MAX_NEWS_AGE_HOURS", "48"))
+INTELLIGENCE_BLOCK_NEGATIVE_NEWS = os.getenv(
+    "INTELLIGENCE_BLOCK_NEGATIVE_NEWS", "true"
+).lower() in ("1", "true", "yes")
+INTELLIGENCE_MIN_COMPOSITE_SCORE = float(os.getenv("INTELLIGENCE_MIN_COMPOSITE_SCORE", "55"))
+INTELLIGENCE_WEIGHT_TECHNICAL = float(os.getenv("INTELLIGENCE_WEIGHT_TECHNICAL", "0.30"))
+INTELLIGENCE_WEIGHT_REGIME = float(os.getenv("INTELLIGENCE_WEIGHT_REGIME", "0.15"))
+INTELLIGENCE_WEIGHT_LIQUIDITY = float(os.getenv("INTELLIGENCE_WEIGHT_LIQUIDITY", "0.10"))
+INTELLIGENCE_WEIGHT_MOMENTUM = float(os.getenv("INTELLIGENCE_WEIGHT_MOMENTUM", "0.10"))
+INTELLIGENCE_WEIGHT_NEWS = float(os.getenv("INTELLIGENCE_WEIGHT_NEWS", "0.10"))
+INTELLIGENCE_WEIGHT_SOCIAL = float(os.getenv("INTELLIGENCE_WEIGHT_SOCIAL", "0.05"))
+INTELLIGENCE_WEIGHT_FUNDAMENTAL = float(os.getenv("INTELLIGENCE_WEIGHT_FUNDAMENTAL", "0.08"))
+INTELLIGENCE_WEIGHT_ONCHAIN = float(os.getenv("INTELLIGENCE_WEIGHT_ONCHAIN", "0.07"))
+CANDIDATE_DIAGNOSTICS_PATH = os.getenv(
+    "CANDIDATE_DIAGNOSTICS_PATH", ".cache/candidate_diagnostics.jsonl"
+)
+MIN_REWARD_ATR_MULT = float(os.getenv("MIN_REWARD_ATR_MULT", "0.35"))
+ESTIMATED_FEE_PCT = float(os.getenv("ESTIMATED_FEE_PCT", "0.06"))
+ESTIMATED_SLIPPAGE_PCT = float(os.getenv("ESTIMATED_SLIPPAGE_PCT", "0.05"))
+
 # --- AI Signal Engine ---
 AI_CONFIDENCE_THRESHOLD = float(os.getenv("AI_CONFIDENCE_THRESHOLD", "90"))
 

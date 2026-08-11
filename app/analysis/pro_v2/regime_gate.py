@@ -61,7 +61,12 @@ def pd_timestamp_hour(ts) -> int:
     return int(pd.to_datetime(ts, utc=True).hour)
 
 
-def check_structure_alignment(ctx: MarketContext, direction: str) -> GateResult:
+def check_structure_alignment(
+    ctx: MarketContext,
+    direction: str,
+    *,
+    allow_override: bool = False,
+) -> GateResult:
     structure = ctx.structure
     if direction == "BUY":
         passed = structure in ("UPTREND", "RANGE")
@@ -73,12 +78,31 @@ def check_structure_alignment(ctx: MarketContext, direction: str) -> GateResult:
         reason = f"LTF structure {structure} allows short" if passed else (
             f"LTF structure {structure} blocks short"
         )
+
+    if not passed and allow_override:
+        return GateResult(
+            "Structure Alignment",
+            True,
+            f"{reason} — confluence core override",
+            blocking=True,
+        )
     return GateResult("Structure Alignment", passed, reason, blocking=True)
 
 
-def run_regime_gates(ctx: MarketContext, direction: str | None = None) -> list[GateResult]:
+def run_regime_gates(
+    ctx: MarketContext,
+    direction: str | None = None,
+    *,
+    allow_bos_structure_override: bool = False,
+) -> list[GateResult]:
     gates = [check_atr_gate(ctx), check_adx_gate(ctx)]
     gates.append(check_session_gate(ctx))
     if direction in ("BUY", "SELL"):
-        gates.append(check_structure_alignment(ctx, direction))
+        gates.append(
+            check_structure_alignment(
+                ctx,
+                direction,
+                allow_override=allow_bos_structure_override,
+            )
+        )
     return gates

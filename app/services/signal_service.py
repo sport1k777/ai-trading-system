@@ -15,9 +15,6 @@ from typing import Optional
 
 from app.config import (
     DEFAULT_INTERVAL,
-    FAST_SCAN_CANDIDATE_COUNT,
-    FAST_SCAN_ENABLED,
-    FAST_SCAN_MIN_UNIVERSE,
     PRO_V2_HTF_INTERVAL,
     SCANNER_SYMBOL_TARGET,
     SIGNAL_ENGINE_VERSION,
@@ -34,8 +31,9 @@ from app.diagnostics.pipeline_diagnostic import (
 )
 from app.indicators.extended import ExtendedIndicators
 from app.indicators.signals import SignalIndicators
+from app.intelligence.pipeline import CycleContext, IntelligencePipeline
 from app.pipeline import TradingPipeline
-from app.scanner.fast_scanner import rank_symbols, score_from_df
+from app.scanner.fast_scanner import score_from_df
 from app.scanner.parallel_runner import scan_symbols_parallel
 from app.scanner.symbol_universe import get_scan_symbols
 from app.telegram.formatter import format_live_signal_message
@@ -76,10 +74,12 @@ class SignalService:
         self.store = SignalStore(store_path or SIGNAL_SERVICE_SENT_STORE_PATH)
         self.notifier = TelegramNotifier(min_confidence=self.min_confidence)
         self.pipeline = TradingPipeline()
+        self.intel_pipeline = IntelligencePipeline(self.pipeline)
         self.symbols = symbols or self._load_symbols()
         self._running = False
         self._consecutive_cycle_failures = 0
         self._cycle_count = 0
+        self._cycle_ctx: CycleContext | None = None
 
     def _load_symbols(self) -> list[str]:
         if SCANNER_SYMBOL_TARGET > 5:
@@ -175,6 +175,41 @@ class SignalService:
 
         signal = result.signal
         direction = signal.get("signal")
+
+        # Stage 5 — intelligence scoring and gating
+        intel_rejection: list[str] = []
+        if self._cycle_ctx is not None and direction in ("BUY", "SELL"):
+            scores, intel_rejection = self.intel_pipeline.score_analysis(
+                result, self._cycle_ctx
+            )
+            if scores is not None:
+                self.intel_pipeline.attach_intelligence_to_signal(
+                    result, scores, self._cycle_ctx
+                )
+                if intel_rejection:
+                    _trace(
+                        "process_symbol.intelligence_blocked",
+                        symbol=symbol,
+                        direction=direction,
+                        reasons="; ".join(intel_rejection[:2]),
+                    )
+                    logger.info(
+                        "%s: Intelligence gate blocked %s — %s",
+                        symbol,
+                        direction,
+                        "; ".join(intel_rejection),
+                    )
+                    diag = self.intel_pipeline.diagnostics.build_from_analysis(
+                        result,
+                        stage_reached="intelligence_gate",
+                        decision="REJECTED",
+                        intel=self._cycle_ctx.intelligence.get(symbol),
+                        scores=scores,
+                        regime=self._cycle_ctx.regime,
+                        rejection_reasons=intel_rejection,
+                    )
+                    self.intel_pipeline.diagnostics.record(diag)
+                    return True
 
         if direction not in ("BUY", "SELL"):
             _trace(
@@ -290,6 +325,17 @@ class SignalService:
             return False
 
         self.store.record(record)
+        if self._cycle_ctx is not None:
+            self._cycle_ctx.stats.signals_sent += 1
+            diag = self.intel_pipeline.diagnostics.build_from_analysis(
+                result,
+                stage_reached="telegram_sent",
+                decision=direction,
+                intel=self._cycle_ctx.intelligence.get(symbol),
+                scores=None,
+                regime=self._cycle_ctx.regime,
+            )
+            self.intel_pipeline.diagnostics.record(diag)
         _trace(
             "process_symbol.telegram_sent",
             symbol=symbol,
@@ -319,29 +365,6 @@ class SignalService:
         df = ExtendedIndicators.add_all(df)
         return score_from_df(symbol, df)
 
-    def _select_deep_scan_symbols(self) -> list[str]:
-        """Stage-1 fast scan → Stage-2 deep analysis shortlist."""
-        if (
-            not FAST_SCAN_ENABLED
-            or len(self.symbols) <= FAST_SCAN_MIN_UNIVERSE
-        ):
-            return self.symbols
-
-        logger.info(
-            "Stage-1 fast scan | universe=%d target_candidates=%d",
-            len(self.symbols),
-            FAST_SCAN_CANDIDATE_COUNT,
-        )
-        candidates = rank_symbols(
-            self.symbols,
-            self._fast_scan_symbol,
-            top_n=FAST_SCAN_CANDIDATE_COUNT,
-        )
-        if not candidates:
-            logger.warning("Fast scan returned no candidates; falling back to priority symbols")
-            return self.symbols[:FAST_SCAN_CANDIDATE_COUNT]
-        return candidates
-
     def run_cycle(self) -> int:
         """Run one full scan across all symbols. Returns number of symbol-level failures."""
         _trace("run_cycle.start", symbols=len(self.symbols))
@@ -349,8 +372,17 @@ class SignalService:
         if self._cycle_count % 60 == 1 and SCANNER_SYMBOL_TARGET > 5:
             self.refresh_symbols()
 
-        scan_symbols = self._select_deep_scan_symbols()
-        _trace("run_cycle.deep_scan", universe=len(self.symbols), selected=len(scan_symbols))
+        self._cycle_ctx = self.intel_pipeline.prepare_cycle(
+            self.symbols,
+            self._fast_scan_symbol,
+        )
+        scan_symbols = self._cycle_ctx.candidates
+        _trace(
+            "run_cycle.deep_scan",
+            universe=len(self.symbols),
+            selected=len(scan_symbols),
+            regime=self._cycle_ctx.regime.label,
+        )
 
         if self.parallel and len(scan_symbols) > 1:
             results, failures = scan_symbols_parallel(
@@ -378,6 +410,20 @@ class SignalService:
                     logger.exception("Unhandled error while scanning %s", symbol)
 
         _trace("run_cycle.done", failures=failures, symbols=len(self.symbols))
+        if self._cycle_ctx is not None:
+            stats = self._cycle_ctx.stats
+            logger.info(
+                "Intelligence cycle summary | universe=%d survivors=%d analyzed=%d "
+                "buy=%d sell=%d wait=%d rejected=%d sent=%d",
+                stats.universe_count,
+                stats.cheap_filter_survivors,
+                stats.deeply_analyzed,
+                stats.buy_candidates,
+                stats.sell_candidates,
+                stats.wait_count,
+                stats.rejected_count,
+                stats.signals_sent,
+            )
         return failures
 
     def _sleep_until_next_cycle(self, cycle_started: float) -> None:

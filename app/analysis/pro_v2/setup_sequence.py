@@ -151,3 +151,55 @@ def pick_best_narrative(ctx: MarketContext) -> SetupNarrative:
         return best
 
     return max(complete, key=lambda c: sum(s.completed for s in c.steps))
+
+
+def pick_best_narrative_for_direction(ctx: MarketContext, direction: str) -> SetupNarrative:
+    """Best continuation or reversal narrative for a fixed direction."""
+    cont = validate_continuation(ctx, direction)
+    rev = validate_reversal(ctx, direction)
+    candidates = [cont, rev]
+    complete = [c for c in candidates if c.complete]
+    if complete:
+        return max(complete, key=lambda c: sum(s.completed for s in c.steps))
+    return max(candidates, key=lambda c: sum(s.completed for s in c.steps))
+
+
+def confluence_core_aligned(ctx: MarketContext, direction: str) -> tuple[bool, str]:
+    """BOS + order block + liquidity sweep + EMA stack (CHOCH optional)."""
+    if direction not in ("BUY", "SELL"):
+        return False, "No direction"
+
+    struct_ok, struct_reason = _structure_break(ctx, direction)
+    if not struct_ok:
+        return False, struct_reason
+
+    sweep_ok, sweep_reason = liquidity_swept_recently(ctx, direction)
+    if not sweep_ok:
+        return False, sweep_reason
+
+    ob = ctx.order_block
+    if direction == "BUY":
+        if not ob or not ob.get("bullish"):
+            return False, "No bullish order block"
+        block = ob["bullish"]
+        if not near_bullish_poi(ctx.price, block["low"], block["high"]):
+            return False, "Price not at bullish order block"
+    else:
+        if not ob or not ob.get("bearish"):
+            return False, "No bearish order block"
+        block = ob["bearish"]
+        if not near_bearish_poi(ctx.price, block["low"], block["high"]):
+            return False, "Price not at bearish order block"
+
+    last = ctx.last
+    ema20 = float(last.get("ema20", 0))
+    ema50 = float(last.get("ema50", 0))
+    close = float(last.get("close", 0))
+    if direction == "BUY":
+        if not (ema20 > ema50 and close > ema50):
+            return False, "EMA stack not bullish"
+    else:
+        if not (ema20 < ema50 and close < ema50):
+            return False, "EMA stack not bearish"
+
+    return True, "BOS+OB+liquidity+EMA aligned"

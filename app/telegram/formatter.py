@@ -438,6 +438,84 @@ def _format_signal_reason(signal: dict) -> str:
     return _md_escape("Multi\\-factor confluence aligned with signal direction")
 
 
+def _format_intelligence_section(signal: dict) -> list[str]:
+    """Multi-source intelligence block — never claims unavailable data."""
+    intel = signal.get("intelligence")
+    if not intel:
+        return []
+
+    def _score_label(val, *, unavailable: str = "N/A") -> str:
+        if val is None:
+            return unavailable
+        if val >= 70:
+            return "Strong"
+        if val >= 55:
+            return "Moderate"
+        if val >= 40:
+            return "Neutral"
+        return "Weak"
+
+    def _sentiment_label(val) -> str:
+        if val is None:
+            return "Unavailable"
+        scaled = (float(val) - 50) / 50.0
+        if scaled > 0.15:
+            return "Positive"
+        if scaled < -0.15:
+            return "Negative"
+        return "Neutral"
+
+    tech = intel.get("technical_score")
+    regime = intel.get("market_regime") or intel.get("btc_trend") or "Unknown"
+    news = _sentiment_label(intel.get("news_score"))
+    social = _sentiment_label(intel.get("social_score"))
+    if intel.get("social_score") is None:
+        social = "Unavailable"
+    fundamental = _score_label(intel.get("fundamental_score"), unavailable="Unavailable")
+    onchain = _score_label(intel.get("onchain_score"), unavailable="Unavailable")
+    liquidity = _score_label(intel.get("liquidity_score"))
+
+    reasons = intel.get("key_reasons") or []
+    warnings = intel.get("warnings") or []
+    unavailable = intel.get("sources_unavailable") or []
+
+    lines = [
+        _section("Multi\\-Source Intelligence"),
+        f"📊 *Technical* `{_md_escape(f'{tech:.0f}/100' if tech is not None else 'N/A')}`",
+        f"🌍 *Market Regime* {_md_escape(str(regime))}",
+        f"📰 *News* {_md_escape(news)}",
+        f"🐦 *Social/X* {_md_escape(social)}",
+        f"🏦 *Fundamental* {_md_escape(fundamental)}",
+        f"⛓ *On\\-chain* {_md_escape(onchain)}",
+        f"💧 *Liquidity* {_md_escape(liquidity)}",
+    ]
+
+    if reasons:
+        lines.append("")
+        lines.append("*Why:*")
+        for r in reasons[:5]:
+            lines.append(f"• {_md_escape(str(r)[:100])}")
+
+    if warnings:
+        lines.append("")
+        lines.append("*Risks:*")
+        for w in warnings[:4]:
+            lines.append(f"• {_md_escape(str(w)[:100])}")
+
+    if unavailable:
+        unavail_short = ", ".join(str(u).split(":")[0] for u in unavailable[:4])
+        lines.append("")
+        lines.append(f"📡 *Data* {_md_escape(unavail_short)} unavailable")
+
+    freshness = intel.get("data_freshness_minutes")
+    if freshness is not None:
+        lines.append(f"🕒 *Freshness* `{_md_escape(f'{freshness:.0f}m')}`")
+
+    lines.append("")
+    lines.append("⚠️ *SIGNAL ONLY — NO AUTOMATED TRADING*")
+    return lines
+
+
 def _format_premium_signal(
     result: AnalysisResult,
     *,
@@ -556,6 +634,10 @@ def _format_premium_signal(
         lines.extend([
             f"📝 *Narrative* {_md_escape(narrative[:180])}",
         ])
+
+    intel_lines = _format_intelligence_section(signal)
+    if intel_lines:
+        lines.extend([""] + intel_lines)
 
     lines.extend([
         "",

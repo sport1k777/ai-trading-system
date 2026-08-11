@@ -7,6 +7,9 @@ from dataclasses import dataclass, field
 from app.analysis.poi_proximity import near_zone
 from app.analysis.pro_v2.grader import GRADE_BASE, GRADE_ORDER
 from app.config import (
+    ESTIMATED_FEE_PCT,
+    ESTIMATED_SLIPPAGE_PCT,
+    MIN_REWARD_ATR_MULT,
     TELEGRAM_NOTIFY_MIN_CONFIDENCE,
     TP_MIN_RR_TP1,
     TP_MIN_RR_TP2,
@@ -425,6 +428,50 @@ def _validate_engine_context(result: AnalysisResult, direction: str) -> list[str
     return errors
 
 
+def _resolve_atr(result: AnalysisResult) -> float:
+    if hasattr(result, "atr"):
+        try:
+            return float(result.atr)
+        except (TypeError, ValueError):
+            pass
+    try:
+        return float(result.df.iloc[-1].get("atr", 0))
+    except (AttributeError, IndexError, KeyError, TypeError, ValueError):
+        return 0.0
+
+
+def _validate_min_reward(
+    direction: str,
+    entry: float,
+    tp1: float,
+    atr: float,
+) -> tuple[bool, str]:
+    """Reject setups where TP1 is too close relative to volatility and costs."""
+    if atr <= 0 or entry <= 0:
+        return True, "ok"
+
+    reward = abs(tp1 - entry)
+    min_reward = MIN_REWARD_ATR_MULT * atr
+    cost_buffer = entry * (ESTIMATED_FEE_PCT + ESTIMATED_SLIPPAGE_PCT) / 100.0
+    effective_min = max(min_reward, cost_buffer * 2.0)
+
+    if reward < effective_min:
+        reward_pct = reward / entry * 100.0
+        min_pct = effective_min / entry * 100.0
+        return False, (
+            f"TP1 reward {reward_pct:.3f}% below minimum {min_pct:.3f}% "
+            f"({MIN_REWARD_ATR_MULT}×ATR + fee/slippage buffer)"
+        )
+    return True, "ok"
+
+
+def _validate_intelligence_blockers(signal: dict) -> list[str]:
+    """Reject when multi-source intelligence flagged hard blockers."""
+    intel = signal.get("intelligence") or {}
+    blockers = intel.get("blockers") or []
+    return [f"Intelligence: {b}" for b in blockers if b]
+
+
 def validate_signal(
     result: AnalysisResult,
     *,
@@ -513,6 +560,18 @@ def validate_signal(
     ok, msg = _validate_price_drift(entry, float(price), max_drift_pct=price_drift_max_pct)
     if not ok:
         errors.append(f"Price drift: {msg}")
+
+    ok, msg = _validate_min_reward(
+        direction,
+        entry,
+        tp1,
+        _resolve_atr(result),
+    )
+    if not ok:
+        errors.append(f"Minimum reward: {msg}")
+
+    for intel_err in _validate_intelligence_blockers(signal):
+        errors.append(intel_err)
 
     for ctx_err in _validate_engine_context(result, direction):
         errors.append(ctx_err)

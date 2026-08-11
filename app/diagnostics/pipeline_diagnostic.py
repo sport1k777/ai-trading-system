@@ -30,7 +30,9 @@ from app.analysis.pro_v2.regime_gate import check_adx_gate, check_atr_gate, run_
 from app.analysis.pro_v2.risk_gate import check_risk_levels
 from app.analysis.pro_v2.setup_sequence import (
     _structure_break,
+    confluence_core_aligned,
     pick_best_narrative,
+    pick_best_narrative_for_direction,
     validate_continuation,
     validate_reversal,
 )
@@ -102,9 +104,19 @@ def _bos_pass(ctx: MarketContext, direction: str) -> tuple[bool, str]:
 def _choch_pass(ctx: MarketContext, direction: str) -> tuple[bool, str]:
     if direction == "BUY":
         ok = ctx.choch == "BULLISH_CHOCH"
-        return ok, ctx.choch if ok else f"No bullish CHOCH ({ctx.choch})"
+        if ok:
+            return True, ctx.choch
+        core_ok, core_detail = confluence_core_aligned(ctx, direction)
+        if core_ok:
+            return True, f"CHOCH optional — confluence core ({core_detail})"
+        return False, f"No bullish CHOCH ({ctx.choch})"
     ok = ctx.choch == "BEARISH_CHOCH"
-    return ok, ctx.choch if ok else f"No bearish CHOCH ({ctx.choch})"
+    if ok:
+        return True, ctx.choch
+    core_ok, core_detail = confluence_core_aligned(ctx, direction)
+    if core_ok:
+        return True, f"CHOCH optional — confluence core ({core_detail})"
+    return False, f"No bearish CHOCH ({ctx.choch})"
 
 
 def _liquidity_pass(ctx: MarketContext, direction: str) -> tuple[bool, str]:
@@ -148,15 +160,22 @@ def _fvg_pass(ctx: MarketContext, direction: str) -> tuple[bool, str]:
     poi_tol = _regime_poi_tolerance(ctx)
     prox = _poi_proximity_label(poi_tol)
     fvg = ctx.fvg
-    if fvg:
-        if direction == "BUY" and fvg.get("type") == "BULLISH":
-            if near_bullish_poi(ctx.price, fvg["bottom"], fvg["top"], pct=poi_tol):
-                return True, f"Bullish FVG {fvg['bottom']:.2f}–{fvg['top']:.2f}"
-        if direction == "SELL" and fvg.get("type") == "BEARISH":
-            if near_bearish_poi(ctx.price, fvg["bottom"], fvg["top"], pct=poi_tol):
-                return True, f"Bearish FVG {fvg['bottom']:.2f}–{fvg['top']:.2f}"
-        return False, f"Active {fvg.get('type', 'unknown')} FVG outside {prox} proximity"
-    return False, "No active FVG"
+
+    ob_ok, ob_detail = _order_block_pass(ctx, direction)
+    if ob_ok:
+        return True, f"FVG optional — OB aligned ({ob_detail})"
+
+    if not fvg:
+        return True, "FVG optional (no active FVG)"
+
+    if direction == "BUY" and fvg.get("type") == "BULLISH":
+        if near_bullish_poi(ctx.price, fvg["bottom"], fvg["top"], pct=poi_tol):
+            return True, f"Bullish FVG {fvg['bottom']:.2f}–{fvg['top']:.2f}"
+    if direction == "SELL" and fvg.get("type") == "BEARISH":
+        if near_bearish_poi(ctx.price, fvg["bottom"], fvg["top"], pct=poi_tol):
+            return True, f"Bearish FVG {fvg['bottom']:.2f}–{fvg['top']:.2f}"
+
+    return True, f"FVG optional — active {fvg.get('type', 'unknown')} FVG outside {prox} proximity"
 
 
 def _ema_pass_v1(ctx: MarketContext, direction: str, trend: str) -> tuple[bool, str]:
@@ -360,23 +379,14 @@ def _v1_confidence(ctx: MarketContext, direction: str) -> tuple[float, str]:
 
 
 def _v2_confidence(ctx: MarketContext, direction: str) -> tuple[float, str, str]:
-    narrative = pick_best_narrative(ctx)
-    if direction == "BUY":
-        cont = validate_continuation(ctx, "BUY")
-        rev = validate_reversal(ctx, "BUY")
-        narrative = cont if sum(s.completed for s in cont.steps) >= sum(s.completed for s in rev.steps) else rev
-    else:
-        cont = validate_continuation(ctx, "SELL")
-        rev = validate_reversal(ctx, "SELL")
-        narrative = cont if sum(s.completed for s in cont.steps) >= sum(s.completed for s in rev.steps) else rev
+    narrative = pick_best_narrative_for_direction(ctx, direction)
 
     htf = evaluate_htf_bias(ctx)
     confirmations = run_confirmations(ctx, direction)
     sl = ctx.swing_lows[-1]["price"] if ctx.swing_lows else None
     sh = ctx.swing_highs[-1]["price"] if ctx.swing_highs else None
     risk = RiskManagerV2.calculate(ctx, direction, swing_low=sl, swing_high=sh)
-    rr = risk["rr"] if risk else 0
-    grade, confidence = assign_grade(narrative, confirmations, htf, rr)
+    grade, confidence = assign_grade(narrative, confirmations, htf, risk)
     return confidence, grade, narrative.summary
 
 
@@ -759,8 +769,7 @@ def _build_engine_gate_checks_v2(
     sl = ctx.swing_lows[-1]["price"] if ctx.swing_lows else None
     sh = ctx.swing_highs[-1]["price"] if ctx.swing_highs else None
     risk = RiskManagerV2.calculate(ctx, direction, swing_low=sl, swing_high=sh)
-    rr = risk["rr"] if risk else 0
-    grade, confidence = assign_grade(narrative, confirmations, htf, rr)
+    grade, confidence = assign_grade(narrative, confirmations, htf, risk)
     grade_ok = grade_emits_signal(grade)
     engine_signal = signal.get("signal", "WAIT")
     engine_reason = signal.get("reasons", ["Unknown"])[0] if signal.get("reasons") else "Unknown"

@@ -15,16 +15,24 @@ def assign_grade(
     narrative: SetupNarrative,
     confirmations: list[ConfirmationResult],
     htf: HTFBias,
-    risk_rr: float,
+    risk: dict | None,
 ) -> tuple[SignalGrade, float]:
+    """Grade and confidence are derived only after a validated trade plan exists."""
     conf_hits = sum(1 for c in confirmations if c.aligned)
     step_hits = sum(1 for s in narrative.steps if s.completed)
 
-    if narrative.complete and conf_hits >= 3 and htf.strength >= 85 and risk_rr >= 2.5:
+    rr1 = float(risk.get("rr_tp1", risk.get("rr", 0))) if risk else 0.0
+    rr2 = float(risk.get("rr_tp2", 0)) if risk else 0.0
+    rr3 = float(risk.get("rr_tp3", 0)) if risk else 0.0
+
+    if not risk or rr1 <= 0:
+        return "C", 0.0
+
+    if narrative.complete and conf_hits >= 3 and htf.strength >= 85 and rr1 >= 2.5 and rr3 >= 3.5:
         grade: SignalGrade = "A+"
-    elif narrative.complete and conf_hits >= 2 and htf.strength >= 70:
+    elif narrative.complete and conf_hits >= 2 and htf.strength >= 70 and rr1 >= 1.5:
         grade = "A"
-    elif step_hits >= len(narrative.steps) - 2 and conf_hits >= 1:
+    elif step_hits >= len(narrative.steps) - 2 and conf_hits >= 1 and rr1 >= 1.5:
         grade = "B"
     else:
         grade = "C"
@@ -32,8 +40,12 @@ def assign_grade(
     confidence = GRADE_BASE[grade]
     confidence += min(5.0, htf.strength / 20)
     confidence += min(3.0, conf_hits * 1.5)
-    if risk_rr >= 2.5:
-        confidence += 2.0
+    if rr1 >= 2.0:
+        confidence += 1.0
+    if rr2 >= 2.5:
+        confidence += 0.5
+    if rr3 >= 3.5:
+        confidence += 0.5
     confidence = min(99.0, round(confidence, 1))
 
     return grade, confidence

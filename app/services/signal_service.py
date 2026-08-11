@@ -15,8 +15,11 @@ from typing import Optional
 
 from app.config import (
     DEFAULT_INTERVAL,
+    FAST_SCAN_CANDIDATE_COUNT,
+    FAST_SCAN_ENABLED,
+    FAST_SCAN_MIN_UNIVERSE,
     PRO_V2_HTF_INTERVAL,
-    SCANNER_SYMBOLS,
+    SCANNER_SYMBOL_TARGET,
     SIGNAL_ENGINE_VERSION,
     SIGNAL_SERVICE_ERROR_BACKOFF_SECONDS,
     SIGNAL_SERVICE_RECONNECT_AFTER_ERRORS,
@@ -29,10 +32,16 @@ from app.diagnostics.pipeline_diagnostic import (
     format_diagnostic_block,
     log_decision_gate_audit,
 )
+from app.indicators.extended import ExtendedIndicators
+from app.indicators.signals import SignalIndicators
 from app.pipeline import TradingPipeline
+from app.scanner.fast_scanner import rank_symbols, score_from_df
+from app.scanner.parallel_runner import scan_symbols_parallel
+from app.scanner.symbol_universe import get_scan_symbols
 from app.telegram.formatter import format_live_signal_message
 from app.telegram.notifier import TelegramNotifier
 from app.telegram.signal_store import SentSignalRecord, SignalStore
+from app.validation import validate_signal
 from app.utils.logging_config import setup_logging
 from app.utils.ssl_ca import ensure_ca_bundle
 
@@ -56,8 +65,9 @@ class SignalService:
         min_confidence: float | None = None,
         interval: str | None = None,
         store_path: str | None = None,
+        parallel: bool = True,
     ):
-        self.symbols = symbols or SCANNER_SYMBOLS
+        self.parallel = parallel
         self.scan_interval_seconds = (
             scan_interval_seconds or SIGNAL_SERVICE_SCAN_INTERVAL_SECONDS
         )
@@ -66,8 +76,22 @@ class SignalService:
         self.store = SignalStore(store_path or SIGNAL_SERVICE_SENT_STORE_PATH)
         self.notifier = TelegramNotifier(min_confidence=self.min_confidence)
         self.pipeline = TradingPipeline()
+        self.symbols = symbols or self._load_symbols()
         self._running = False
         self._consecutive_cycle_failures = 0
+        self._cycle_count = 0
+
+    def _load_symbols(self) -> list[str]:
+        if SCANNER_SYMBOL_TARGET > 5:
+            client = getattr(self.pipeline.collector, "client", None)
+            return get_scan_symbols(client=client)
+        from app.config import SCANNER_SYMBOLS
+        return list(SCANNER_SYMBOLS)
+
+    def refresh_symbols(self) -> None:
+        """Reload the tradable symbol universe from Bybit."""
+        self.symbols = self._load_symbols()
+        logger.info("Symbol universe refreshed | count=%d", len(self.symbols))
 
     def reconnect(self) -> None:
         logger.warning("Reconnecting Bybit client and rebuilding pipeline")
@@ -201,12 +225,33 @@ class SignalService:
             logger.warning("%s: high-confidence %s but no risk levels", symbol, direction)
             return True
 
+        valid = validate_signal(
+            result,
+            min_confidence=self.min_confidence,
+            market_price=result.price,
+        )
+        if not valid.ok:
+            _trace(
+                "process_symbol.telegram_blocked_validation",
+                symbol=symbol,
+                direction=direction,
+                reason=valid.reason,
+            )
+            logger.warning(
+                "%s: Telegram blocked — validation failed for %s: %s",
+                symbol,
+                direction,
+                "; ".join(valid.errors) if valid.errors else valid.reason,
+            )
+            return True
+
         record = SentSignalRecord.from_result(
             symbol=symbol,
             direction=direction,
             risk=risk,
             confidence=confidence,
             timeframe=self.interval,
+            order_block=signal.get("orderblock") or result.order_block,
         )
 
         grade = signal.get("grade", "n/a")
@@ -261,25 +306,77 @@ class SignalService:
         )
         return True
 
+    def _fast_scan_symbol(self, symbol: str):
+        """Stage-1 cheap indicator scan for candidate ranking."""
+        df = self.pipeline.collector.get_candles(
+            symbol=symbol,
+            interval=self.interval,
+            limit=80,
+        )
+        if df is None or len(df) < 30:
+            return score_from_df(symbol, df)
+        df = SignalIndicators.add_all(df)
+        df = ExtendedIndicators.add_all(df)
+        return score_from_df(symbol, df)
+
+    def _select_deep_scan_symbols(self) -> list[str]:
+        """Stage-1 fast scan → Stage-2 deep analysis shortlist."""
+        if (
+            not FAST_SCAN_ENABLED
+            or len(self.symbols) <= FAST_SCAN_MIN_UNIVERSE
+        ):
+            return self.symbols
+
+        logger.info(
+            "Stage-1 fast scan | universe=%d target_candidates=%d",
+            len(self.symbols),
+            FAST_SCAN_CANDIDATE_COUNT,
+        )
+        candidates = rank_symbols(
+            self.symbols,
+            self._fast_scan_symbol,
+            top_n=FAST_SCAN_CANDIDATE_COUNT,
+        )
+        if not candidates:
+            logger.warning("Fast scan returned no candidates; falling back to priority symbols")
+            return self.symbols[:FAST_SCAN_CANDIDATE_COUNT]
+        return candidates
+
     def run_cycle(self) -> int:
         """Run one full scan across all symbols. Returns number of symbol-level failures."""
         _trace("run_cycle.start", symbols=len(self.symbols))
-        failures = 0
-        for symbol in self.symbols:
-            try:
-                ok = self._process_symbol(symbol)
-                if not ok:
+        self._cycle_count += 1
+        if self._cycle_count % 60 == 1 and SCANNER_SYMBOL_TARGET > 5:
+            self.refresh_symbols()
+
+        scan_symbols = self._select_deep_scan_symbols()
+        _trace("run_cycle.deep_scan", universe=len(self.symbols), selected=len(scan_symbols))
+
+        if self.parallel and len(scan_symbols) > 1:
+            results, failures = scan_symbols_parallel(
+                scan_symbols,
+                self._process_symbol,
+            )
+            false_sends = sum(1 for ok in results if ok is False)
+            failures += false_sends
+        else:
+            failures = 0
+            for symbol in scan_symbols:
+                try:
+                    ok = self._process_symbol(symbol)
+                    if not ok:
+                        failures += 1
+                    _trace(
+                        "run_cycle.symbol_done",
+                        symbol=symbol,
+                        ok=ok,
+                        failures=failures,
+                    )
+                except Exception:
                     failures += 1
-                _trace(
-                    "run_cycle.symbol_done",
-                    symbol=symbol,
-                    ok=ok,
-                    failures=failures,
-                )
-            except Exception:
-                failures += 1
-                _trace("run_cycle.symbol_failed", symbol=symbol, failures=failures)
-                logger.exception("Unhandled error while scanning %s", symbol)
+                    _trace("run_cycle.symbol_failed", symbol=symbol, failures=failures)
+                    logger.exception("Unhandled error while scanning %s", symbol)
+
         _trace("run_cycle.done", failures=failures, symbols=len(self.symbols))
         return failures
 

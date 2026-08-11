@@ -1,11 +1,10 @@
-"""Risk Manager V2 — PRO V2 setups with liquidity-based targets."""
+"""Risk Manager V2 — PRO V2 setups with structural trade-plan engine."""
 
 from __future__ import annotations
 
 from app.analysis.market_context import MarketContext
-from app.config import MAX_STOP_ATR_MULT, PRO_V2_MIN_RR, STOP_ATR_MULT, TP_R_MULT
 from app.risk.risk_manager import RiskManager
-from app.risk.tp_mapper import map_take_profits
+from app.risk.trade_plan_engine import build_trade_plan
 
 
 class RiskManagerV2:
@@ -24,43 +23,9 @@ class RiskManagerV2:
         if direction not in ("BUY", "SELL"):
             return None
 
-        price = ctx.price
-        atr = ctx.atr
-        levels = RiskManager.calculate(
-            price,
-            atr,
-            direction,
-            swing_low=swing_low,
-            swing_high=swing_high,
-            setup_type="pro_v2_signal",
-        )
-        if not levels:
-            return None
-
-        if levels["rr"] < PRO_V2_MIN_RR:
-            return None
-
-        risk_dist = abs(price - levels["stop"])
-        if risk_dist > MAX_STOP_ATR_MULT * atr:
-            return None
-
-        tp1, tp2, tp3 = map_take_profits(
-            ctx, direction, levels["entry"], levels["stop"], levels["tp1"],
-        )
-        # RR gate uses the primary RR target from RiskManager, not the nearest ladder step.
-        rr = levels["rr"]
-
-        return {
-            "entry": levels["entry"],
-            "stop": levels["stop"],
-            "tp1": tp1,
-            "tp2": tp2,
-            "tp3": tp3,
-            "tp": tp1,
-            "risk": levels["risk"],
-            "rr": rr,
-        }
+        sl = swing_low["price"] if isinstance(swing_low, dict) else swing_low
+        sh = swing_high["price"] if isinstance(swing_high, dict) else swing_high
+        return build_trade_plan(ctx, direction, swing_low=sl, swing_high=sh)
 
 
-# Register setup params on base RiskManager for compatibility
 RiskManager.SETUP_PARAMS["pro_v2_signal"] = RiskManagerV2.SETUP_PARAMS["pro_v2_signal"]

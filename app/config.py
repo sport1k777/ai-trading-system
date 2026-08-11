@@ -27,7 +27,11 @@ MIN_ADX = float(os.getenv("MIN_ADX", "24"))
 MIN_CONFLUENCE = int(os.getenv("MIN_CONFLUENCE", "5"))
 STOP_ATR_MULT = float(os.getenv("STOP_ATR_MULT", "0.85"))
 TP_R_MULT = float(os.getenv("TP_R_MULT", "2.2"))
+TP_MIN_RR_TP1 = float(os.getenv("TP_MIN_RR_TP1", "1.5"))
+TP_MIN_RR_TP2 = float(os.getenv("TP_MIN_RR_TP2", "2.5"))
+TP_MIN_RR_TP3 = float(os.getenv("TP_MIN_RR_TP3", "3.5"))
 MAX_STOP_ATR_MULT = float(os.getenv("MAX_STOP_ATR_MULT", "1.5"))
+MIN_STOP_ATR_MULT = float(os.getenv("MIN_STOP_ATR_MULT", "0.25"))
 MIN_BARS_BETWEEN_TRADES = int(os.getenv("MIN_BARS_BETWEEN_TRADES", "5"))
 
 SIGNAL_BUY_THRESHOLD = int(os.getenv("SIGNAL_BUY_THRESHOLD", "55"))
@@ -70,7 +74,7 @@ PRO_CONDITION_WEIGHTS = {
 # --- Signal Engine PRO V2 ---
 PRO_V2_HTF_INTERVAL = os.getenv("PRO_V2_HTF_INTERVAL", "60")
 PRO_V2_MIN_ADX = float(os.getenv("PRO_V2_MIN_ADX", "22"))
-PRO_V2_MIN_RR = float(os.getenv("PRO_V2_MIN_RR", "2.0"))
+PRO_V2_MIN_RR = float(os.getenv("PRO_V2_MIN_RR", "1.5"))
 PRO_V2_MIN_GRADE = os.getenv("PRO_V2_MIN_GRADE", "A")
 PRO_V2_SESSION_FILTER = os.getenv("PRO_V2_SESSION_FILTER", "false").lower() in ("1", "true", "yes")
 PRO_V2_BARS_PER_HTF = int(os.getenv("PRO_V2_BARS_PER_HTF", "4"))
@@ -88,6 +92,28 @@ REGIME_LOW_VOL_ATR_PCT = float(os.getenv("REGIME_LOW_VOL_ATR_PCT", "0.35"))
 REGIME_POI_TOLERANCE_HIGH = float(os.getenv("REGIME_POI_TOLERANCE_HIGH", "0.005"))
 REGIME_POI_TOLERANCE_LOW = float(os.getenv("REGIME_POI_TOLERANCE_LOW", "0.002"))
 REGIME_LOW_VOL_TP_R_MULT = float(os.getenv("REGIME_LOW_VOL_TP_R_MULT", "0.85"))
+
+# --- Signal validation (pre-Telegram) ---
+VALIDATION_MIN_RISK_PCT = float(os.getenv("VALIDATION_MIN_RISK_PCT", "0.3"))
+VALIDATION_MAX_RISK_PCT = float(os.getenv("VALIDATION_MAX_RISK_PCT", "3.0"))
+VALIDATION_ENTRY_MAX_DISTANCE_PCT = float(os.getenv("VALIDATION_ENTRY_MAX_DISTANCE_PCT", "1.0"))
+VALIDATION_RR_TOLERANCE_PCT = float(os.getenv("VALIDATION_RR_TOLERANCE_PCT", "0.05"))
+VALIDATION_PRICE_DRIFT_MAX_PCT = float(os.getenv("VALIDATION_PRICE_DRIFT_MAX_PCT", "0.25"))
+SIGNAL_DUPLICATE_WINDOW_MINUTES = int(os.getenv("SIGNAL_DUPLICATE_WINDOW_MINUTES", "30"))
+
+# --- Expanded scanner universe ---
+SCANNER_SYMBOL_TARGET = int(os.getenv("SCANNER_SYMBOL_TARGET", "150"))
+SCANNER_MIN_TURNOVER_24H = float(os.getenv("SCANNER_MIN_TURNOVER_24H", "500000"))
+SCANNER_MAX_SPREAD_PCT = float(os.getenv("SCANNER_MAX_SPREAD_PCT", "0.5"))
+SCANNER_MAX_WORKERS = int(os.getenv("SCANNER_MAX_WORKERS", "0"))  # 0 = auto from CPU
+SCANNER_UNIVERSE_CACHE_SECONDS = int(os.getenv("SCANNER_UNIVERSE_CACHE_SECONDS", "3600"))
+SCANNER_CPU_LIMIT_PCT = float(os.getenv("SCANNER_CPU_LIMIT_PCT", "80"))
+SCANNER_RAM_LIMIT_MB = int(os.getenv("SCANNER_RAM_LIMIT_MB", "2048"))
+
+# --- Two-stage scanner ---
+FAST_SCAN_ENABLED = os.getenv("FAST_SCAN_ENABLED", "true").lower() in ("1", "true", "yes")
+FAST_SCAN_CANDIDATE_COUNT = int(os.getenv("FAST_SCAN_CANDIDATE_COUNT", "25"))
+FAST_SCAN_MIN_UNIVERSE = int(os.getenv("FAST_SCAN_MIN_UNIVERSE", "30"))
 
 # --- 24/7 Signal Service ---
 SIGNAL_SERVICE_SCAN_INTERVAL_SECONDS = int(

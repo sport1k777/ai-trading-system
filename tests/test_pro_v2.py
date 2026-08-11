@@ -68,7 +68,8 @@ class TestGrader:
         ]
         from app.analysis.pro_v2.models import HTFBias
         htf = HTFBias("LONG", "BULLISH", "UPTREND", "BULLISH_BOS", "strong", 90)
-        grade, confidence = assign_grade(narrative, confs, htf, 2.6)
+        risk = {"rr": 2.6, "rr_tp1": 2.6, "rr_tp2": 3.0, "rr_tp3": 4.0}
+        grade, confidence = assign_grade(narrative, confs, htf, risk)
         assert grade in ("A+", "A")
         assert confidence >= 85
 
@@ -117,7 +118,18 @@ class TestSignalEngineProV2:
                 summary="Continuation LONG complete",
             )
             mock_rm.return_value = {
-                "entry": 130.0, "stop": 128.0, "tp1": 134.0, "tp2": 135.0, "tp3": 136.0, "rr": 2.2, "risk": 2.0, "tp": 134.0,
+                "entry": 130.0,
+                "stop": 128.0,
+                "tp1": 133.0,
+                "tp2": 135.0,
+                "tp3": 137.0,
+                "rr": 1.5,
+                "rr_tp1": 1.5,
+                "rr_tp2": 2.5,
+                "rr_tp3": 3.5,
+                "risk": 2.0,
+                "tp": 133.0,
+                "entry_type": "market",
             }
             ctx = MarketContextBuilder.build(df, indicators_calculated=True)
             result = SignalEngineProV2.generate(df, context=ctx, indicators_calculated=True)

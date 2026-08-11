@@ -1,4 +1,5 @@
 from app.config import MAX_STOP_ATR_MULT, STOP_ATR_MULT, TP_R_MULT
+from app.risk.signal_levels import finalize_risk_levels
 
 
 class RiskManager:
@@ -64,15 +65,13 @@ class RiskManager:
 
         rr = round(abs(tp1 - entry) / risk, 2)
 
-        return {
-            "entry": round(entry, 2),
-            "stop": round(stop, 2),
-            "tp1": round(tp1, 2),
-            "tp2": round(tp1, 2),
-            "tp3": round(tp1, 2),
-            "risk": round(risk, 4),
-            "rr": rr,
-        }
+        return finalize_risk_levels(
+            signal,
+            round(entry, 2),
+            round(stop, 2),
+            round(tp1, 2),
+            primary_tp=round(tp1, 2),
+        )
 
     @staticmethod
     def simulate_trade(

@@ -15,7 +15,10 @@ from app.analysis.pro_v2.htf_bias import evaluate_htf_bias
 from app.analysis.pro_v2.models import ProV2Signal
 from app.analysis.pro_v2.regime_gate import run_regime_gates
 from app.analysis.pro_v2.risk_gate import check_risk_levels
-from app.analysis.pro_v2.setup_sequence import pick_best_narrative
+from app.analysis.pro_v2.setup_sequence import (
+    confluence_core_aligned,
+    pick_best_narrative,
+)
 from app.risk.risk_manager_v2 import RiskManagerV2
 
 logger = logging.getLogger(__name__)
@@ -55,7 +58,14 @@ class SignalEngineProV2:
         narrative = pick_best_narrative(ctx)
         direction = direction_from_narrative(narrative)
 
-        gates = run_regime_gates(ctx, direction)
+        core_ok, _ = (
+            confluence_core_aligned(ctx, direction) if direction else (False, "")
+        )
+        gates = run_regime_gates(
+            ctx,
+            direction,
+            allow_bos_structure_override=core_ok,
+        )
         gates_passed = [g.name for g in gates if g.passed]
         gates_failed = [f"{g.name}: {g.reason}" for g in gates if not g.passed and g.blocking]
 
@@ -89,7 +99,7 @@ class SignalEngineProV2:
             gates_failed.append(risk_gate.reason)
             return SignalEngineProV2._wait(risk_gate.reason, ctx, gates_failed=gates_failed)
 
-        grade, confidence = assign_grade(narrative, confirmations, htf, risk["rr"] if risk else 0)
+        grade, confidence = assign_grade(narrative, confirmations, htf, risk)
 
         if not grade_emits_signal(grade):
             return SignalEngineProV2._wait(
@@ -105,7 +115,10 @@ class SignalEngineProV2:
         step_reasons = [f"{s.name}: {s.reason}" for s in narrative.steps if s.completed]
         reasons = gates_passed + step_reasons + conf_reasons
         reasons.append(
-            f"Entry={risk['entry']} SL={risk['stop']} TP={risk['tp1']} RR=1:{risk['rr']}"
+            f"Entry={risk['entry']} ({risk.get('entry_type', 'market')}) "
+            f"SL={risk['stop']} TP1={risk['tp1']} "
+            f"R:R TP1=1:{risk.get('rr_tp1', risk['rr']):.2f} "
+            f"TP2=1:{risk.get('rr_tp2', 0):.2f} TP3=1:{risk.get('rr_tp3', 0):.2f}"
         )
 
         explanation = SignalEngineProV2._build_explanation(

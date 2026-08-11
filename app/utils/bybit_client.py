@@ -5,6 +5,8 @@ open/close positions, or call any Bybit trading or account-mutation endpoints.
 Allowed operations: public market data (klines, tickers, server time) only.
 """
 
+from __future__ import annotations
+
 import logging
 
 import pandas as pd
@@ -16,7 +18,12 @@ from app.utils.ssl_ca import ensure_ca_bundle
 logger = logging.getLogger(__name__)
 
 # Explicit allow-list — no trading / account mutation methods.
-_ALLOWED_SESSION_METHODS = frozenset({"get_server_time", "get_tickers", "get_kline"})
+_ALLOWED_SESSION_METHODS = frozenset({
+    "get_server_time",
+    "get_tickers",
+    "get_kline",
+    "get_instruments_info",
+})
 
 
 class _ReadOnlySession:
@@ -56,8 +63,23 @@ class BybitClient:
     def get_server_time(self):
         return self.session.get_server_time()
 
-    def get_tickers(self, category: str = "linear"):
-        return self.session.get_tickers(category=category)
+    def get_tickers(self, category: str = "linear", symbol: str | None = None):
+        params: dict = {"category": category}
+        if symbol:
+            params["symbol"] = symbol
+        return self.session.get_tickers(**params)
+
+    def get_instruments_info(
+        self,
+        category: str = "linear",
+        *,
+        symbol: str | None = None,
+        limit: int = 1000,
+    ) -> dict:
+        params: dict = {"category": category, "limit": limit}
+        if symbol:
+            params["symbol"] = symbol
+        return self.session.get_instruments_info(**params)
 
     def get_klines(
         self,

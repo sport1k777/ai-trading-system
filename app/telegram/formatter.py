@@ -8,6 +8,8 @@ from typing import TYPE_CHECKING, Callable, Optional
 import pandas as pd
 
 from app.config import DEFAULT_INTERVAL
+from app.risk.signal_levels import compute_rr
+from app.validation import validate_signal
 
 if TYPE_CHECKING:
     from app.pipeline import AnalysisResult
@@ -455,6 +457,14 @@ def _format_premium_signal(
     if not risk:
         return None
 
+    validation = validate_signal(
+        result,
+        min_confidence=min_confidence,
+        market_price=result.price,
+    )
+    if not validation.ok:
+        return None
+
     interval = timeframe or DEFAULT_INTERVAL
     tf = format_timeframe(interval)
     symbol = _md_escape(result.symbol)
@@ -468,7 +478,9 @@ def _format_premium_signal(
     tp1 = float(risk["tp1"])
     tp2 = float(risk["tp2"])
     tp3 = float(risk["tp3"])
-    rr = float(risk["rr"])
+    rr_tp1 = float(risk.get("rr_tp1", compute_rr(entry, stop, tp1)))
+    rr_tp2 = float(risk.get("rr_tp2", compute_rr(entry, stop, tp2)))
+    rr_tp3 = float(risk.get("rr_tp3", compute_rr(entry, stop, tp3)))
 
     signal_icon = "🟢" if direction == "BUY" else "🔴"
     side = _md_escape("LONG" if direction == "BUY" else "SHORT")
@@ -488,22 +500,34 @@ def _format_premium_signal(
     narrative = (signal.get("narrative") or "").strip()
 
     risk_pct = abs(entry - stop) / entry * 100 if entry else 0
-    reward_pct = abs(tp1 - entry) / entry * 100 if entry else 0
+    reward_tp1_pct = abs(tp1 - entry) / entry * 100 if entry else 0
+    entry_type = str(risk.get("entry_type") or "market")
+    entry_dist = float(risk.get("entry_distance_pct") or abs(current_price - entry) / entry * 100)
+
+    counter_trend_line = ""
+    if validation.counter_trend and validation.counter_trend_label:
+        counter_trend_line = f"⚠️ *Setup* {_md_escape(validation.counter_trend_label)}"
 
     lines = [
         f"🚀 *AI TRADING SYSTEM PRO*",
         _divider(26),
         "",
         f"{signal_icon} *{signal_label}* · *{side}* · *{symbol}* · `{_md_escape(tf)}`",
-        f"💹 *Price* {_price(current_price)}",
         "",
+    ]
+    if counter_trend_line:
+        lines.append(counter_trend_line)
+        lines.append("")
+    lines.extend([
         _section("Trade Setup"),
-        f"💰 *Entry*     {_price(entry)}",
+        f"💹 *Current*   {_price(current_price)}",
+        f"💰 *Entry*     {_price(entry)} \\({_md_escape(entry_type)} · {_md_escape(f'{entry_dist:.2f}%')} from market\\)",
         f"🛑 *Stop Loss* {_price(stop)} \\({_md_escape(_pct_change(entry, stop))}\\)",
         f"🎯 *TP1*       {_price(tp1)} \\({_md_escape(_pct_change(entry, tp1))}\\)",
         f"🎯 *TP2*       {_price(tp2)} \\({_md_escape(_pct_change(entry, tp2))}\\)",
         f"🎯 *TP3*       {_price(tp3)} \\({_md_escape(_pct_change(entry, tp3))}\\)",
-        f"📈 *R:R*       `{_md_escape(f'1:{rr:.2f}')}` · *Risk* `{_md_escape(f'{risk_pct:.2f}%')}` · *Reward* `{_md_escape(f'{reward_pct:.2f}%')}`",
+        f"📈 *Risk*      `{_md_escape(f'{risk_pct:.2f}%')}`",
+        f"📈 *R:R TP1*   `{_md_escape(f'1:{rr_tp1:.2f}')}` · *TP2* `{_md_escape(f'1:{rr_tp2:.2f}')}` · *TP3* `{_md_escape(f'1:{rr_tp3:.2f}')}`",
         "",
         _section("AI Confidence"),
         f"⭐ *Grade* {_grade_display(grade)}",
@@ -524,9 +548,9 @@ def _format_premium_signal(
         *checklist,
         "",
         _section("Trade Plan"),
-        f"⏳ *Est\\. Duration* {_estimate_duration(interval, rr)}",
+        f"⏳ *Est\\. Duration* {_estimate_duration(interval, rr_tp1)}",
         f"⚠️ *Invalidation* {_invalidation_reason(direction, risk, result)}",
-    ]
+    ])
 
     if narrative:
         lines.extend([

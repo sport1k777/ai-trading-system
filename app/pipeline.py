@@ -20,6 +20,7 @@ from app.config import (
     SIGNAL_ENGINE_VERSION,
 )
 from app.risk.risk_manager import RiskManager
+from app.risk.signal_levels import normalize_risk_dict
 
 logger = logging.getLogger(__name__)
 
@@ -39,14 +40,15 @@ def _risk_from_signal(signal: dict) -> Optional[dict]:
     if entry is None or stop is None:
         return None
     tp = signal.get("tp") or signal.get("tp1")
-    return {
+    raw = {
         "entry": entry,
         "stop": stop,
         "tp1": signal.get("tp1", tp),
-        "tp2": signal.get("tp2", tp),
-        "tp3": signal.get("tp3", tp),
+        "tp2": signal.get("tp2"),
+        "tp3": signal.get("tp3"),
         "rr": signal.get("risk_reward", 0),
     }
+    return normalize_risk_dict(signal["signal"], raw)
 
 
 @dataclass
@@ -152,7 +154,7 @@ class TradingPipeline:
         risk = _risk_from_signal(signal)
         if risk is None and signal["signal"] in ("BUY", "SELL"):
             _trace("analyze.risk_calc_start", symbol=symbol, direction=signal["signal"])
-            risk = RiskManager.calculate(
+            raw_risk = RiskManager.calculate(
                 ctx.price,
                 ctx.atr,
                 signal["signal"],
@@ -161,6 +163,8 @@ class TradingPipeline:
                 tp_price=signal.get("tp_price"),
                 setup_type=signal.get("setup_type", "pro_signal"),
             )
+            if raw_risk:
+                risk = normalize_risk_dict(signal["signal"], raw_risk)
         _trace(
             "analyze.risk_done",
             symbol=symbol,

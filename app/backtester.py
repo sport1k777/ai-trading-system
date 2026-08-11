@@ -4,7 +4,8 @@ from pathlib import Path
 
 import pandas as pd
 
-from app.analysis.signal_generator import SignalGenerator
+from app.analysis.feature_engine import FeatureEngine
+from app.analysis.filter_calibrator import FilterCalibrator
 from app.collectors.candles import CandleCollector
 from app.config import (
     BACKTEST_CACHE_PATH,
@@ -15,7 +16,6 @@ from app.config import (
     DEFAULT_SYMBOL,
     MIN_BARS_BETWEEN_TRADES,
 )
-from app.indicators.signals import SignalIndicators
 from app.risk.risk_manager import RiskManager
 from app.utils.logging_config import setup_logging
 
@@ -48,7 +48,23 @@ class Backtester:
             Path(BACKTEST_CACHE_PATH).unlink()
 
         df = _load_candles(CandleCollector())
-        df = SignalIndicators.calculate(df)
+        df = FeatureEngine.precompute(FeatureEngine.prepare(df))
+
+        # Auto-calibrate filters if too strict for this dataset
+        cal = FilterCalibrator.calibrate(df)
+        cfg = cal["config"]
+        if cal.get("adjusted"):
+            logger.info(
+                "Filters adjusted: threshold %.1f→%.1f conf_gap %.1f→%.1f",
+                cal.get("previous", {}).get("threshold", "?"),
+                cfg["threshold"],
+                cal.get("previous", {}).get("conf_gap", "?"),
+                cfg["conf_gap"],
+            )
+            print(f"Filters auto-calibrated: threshold={cfg['threshold']} conf_gap={cfg['conf_gap']}")
+
+        threshold = cfg.get("threshold", 90.0)
+        conf_gap = cfg.get("conf_gap", 8.0)
 
         trades: list[dict] = []
         last_trade = -MIN_BARS_BETWEEN_TRADES
@@ -58,11 +74,10 @@ class Backtester:
             if i - last_trade < MIN_BARS_BETWEEN_TRADES:
                 continue
 
-            signal = SignalGenerator.generate(df.iloc[: i + 1], indicators_calculated=True)
+            signal = FeatureEngine.signal_at(df, i, threshold)
             if signal["signal"] == "WAIT":
                 continue
 
-            # Enter on next bar open (realistic fill)
             entry_idx = i + 1
             if entry_idx >= len(df):
                 continue
@@ -72,7 +87,7 @@ class Backtester:
             if atr <= 0:
                 continue
 
-            setup = signal.get("setup_type", "trend")
+            setup = signal.get("setup_type", "ai_signal")
             lows = signal.get("swing_lows") or []
             highs = signal.get("swing_highs") or []
             sl = lows[-1]["price"] if lows else None
@@ -113,6 +128,8 @@ class Backtester:
         gp = sum(t["pnl_r"] for t in trades if t["pnl_r"] > 0)
         gl = abs(sum(t["pnl_r"] for t in trades if t["pnl_r"] < 0))
         pf = round(gp / gl, 2) if gl > 0 else float("inf")
+        win_trades = [t for t in trades if t["result"] == "WIN"]
+        avg_rr = round(sum(t["pnl_r"] for t in win_trades) / len(win_trades), 2) if win_trades else 0.0
 
         equity = peak = max_dd = 0.0
         for t in trades:
@@ -137,6 +154,7 @@ class Backtester:
         print(f"Avg R / Trade : {avg_r}")
         print(f"Profit Factor : {pf}")
         print(f"Max Drawdown  : {round(max_dd, 2)} R")
+        print(f"Avg RR (wins) : {avg_rr} R")
         print("\nBy setup:")
         for name, s in sorted(setups.items()):
             wr = round(s["w"] / s["n"] * 100, 1) if s["n"] else 0

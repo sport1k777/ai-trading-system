@@ -1,4 +1,5 @@
 from app.config import MAX_STOP_ATR_MULT, STOP_ATR_MULT, TP_R_MULT
+from app.risk.signal_levels import finalize_risk_levels
 
 
 class RiskManager:
@@ -7,16 +8,37 @@ class RiskManager:
         "mean_reversion": {"stop_mult": 0.75, "tp_r": None},  # tp via bb_mid
         "momentum": {"stop_mult": 1.2, "tp_r": 2.5},
         "pullback": {"stop_mult": 1.0, "tp_r": 2.0},
+        "ai_signal": {"stop_mult": 0.9, "tp_r": 2.2},
+        "pro_signal": {"stop_mult": 0.9, "tp_r": 2.2},
     }
 
     @staticmethod
-    def calculate(price, atr, signal, swing_low=None, swing_high=None, tp_price=None, setup_type="trend"):
+    def calculate(
+        price,
+        atr,
+        signal,
+        swing_low=None,
+        swing_high=None,
+        tp_price=None,
+        setup_type="trend",
+        *,
+        tp_r_mult: float = 1.0,
+        stop_mult_factor: float = 1.0,
+    ):
         if signal not in ("BUY", "SELL") or atr is None or atr <= 0:
             return None
 
         params = RiskManager.SETUP_PARAMS.get(setup_type, {"stop_mult": STOP_ATR_MULT, "tp_r": TP_R_MULT})
-        stop_mult = params["stop_mult"]
-        tp_r = params.get("tp_r", TP_R_MULT)
+        if setup_type == "ai_signal":
+            try:
+                from app.analysis.feature_engine import load_config
+                cfg = load_config()
+                params = {"stop_mult": cfg.get("stop_mult", STOP_ATR_MULT), "tp_r": cfg.get("tp_r", TP_R_MULT)}
+            except ImportError:
+                pass
+        stop_mult = params["stop_mult"] * stop_mult_factor
+        base_tp_r = params.get("tp_r", TP_R_MULT)
+        tp_r = (base_tp_r * tp_r_mult) if base_tp_r is not None else None
 
         if signal == "BUY":
             atr_stop = price - stop_mult * atr
@@ -43,15 +65,13 @@ class RiskManager:
 
         rr = round(abs(tp1 - entry) / risk, 2)
 
-        return {
-            "entry": round(entry, 2),
-            "stop": round(stop, 2),
-            "tp1": round(tp1, 2),
-            "tp2": round(tp1, 2),
-            "tp3": round(tp1, 2),
-            "risk": round(risk, 4),
-            "rr": rr,
-        }
+        return finalize_risk_levels(
+            signal,
+            round(entry, 2),
+            round(stop, 2),
+            round(tp1, 2),
+            primary_tp=round(tp1, 2),
+        )
 
     @staticmethod
     def simulate_trade(
